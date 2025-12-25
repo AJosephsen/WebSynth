@@ -579,6 +579,28 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="sub-panel">
+                    <h4>Transient Sculptor</h4>
+                    <div class="control-group">
+                        <label>Attack Boost</label>
+                        <input type="range" id="transientAmount" min="0" max="12" step="0.1" value="6">
+                        <div class="slider-value">
+                            <span>0 dB</span>
+                            <span id="transientAmountValue">+6.0 dB</span>
+                            <span>+12 dB</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Length</label>
+                        <input type="range" id="transientLength" min="5" max="120" step="1" value="40">
+                        <div class="slider-value">
+                            <span>5ms</span>
+                            <span id="transientLengthValue">40ms</span>
+                            <span>120ms</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="control-panel">
@@ -616,6 +638,37 @@
                         <span>Subtle</span>
                         <span id="lfoDepthValue">25</span>
                         <span>Wide</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🔥 Drive & Fold</h3>
+                <div class="control-group">
+                    <label>Drive</label>
+                    <input type="range" id="driveAmount" min="0" max="24" step="0.5" value="8">
+                    <div class="slider-value">
+                        <span>Clean</span>
+                        <span id="driveAmountValue">+8.0 dB</span>
+                        <span>Hot</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Fold Depth</label>
+                    <input type="range" id="foldAmount" min="0" max="100" step="1" value="20">
+                    <div class="slider-value">
+                        <span>Soft</span>
+                        <span id="foldAmountValue">20%</span>
+                        <span>Folded</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Tone Tilt</label>
+                    <input type="range" id="toneTilt" min="-12" max="12" step="0.5" value="0">
+                    <div class="slider-value">
+                        <span>Darker</span>
+                        <span id="toneTiltValue">0 dB</span>
+                        <span>Brighter</span>
                     </div>
                 </div>
             </div>
@@ -727,7 +780,12 @@
             envAttack: 0.03,
             envDecay: 0.2,
             envSustain: 0.7,
-            envRelease: 0.4
+            envRelease: 0.4,
+            transientAmount: 6,
+            transientLength: 0.04,
+            driveAmount: 8,
+            foldAmount: 20,
+            toneTilt: 0
         };
 
         const noteFrequencies = {
@@ -755,6 +813,7 @@
         const DETUNE_MAX_CENTS = 1200;
         const DETUNE_CURVE_POWER = 1.7;
         const VOICE_MAX_GAIN = 0.32;
+        let driveCurve = null;
 
         function formatDetune(value) {
             const rounded = Math.round(value);
@@ -771,6 +830,72 @@
             const clamped = Math.max(-DETUNE_MAX_CENTS, Math.min(DETUNE_MAX_CENTS, cents));
             const normalized = Math.sign(clamped) * Math.pow(Math.abs(clamped) / DETUNE_MAX_CENTS, 1 / DETUNE_CURVE_POWER);
             return normalized * 100;
+        }
+
+        function dbToLinear(db) {
+            return Math.pow(10, db / 20);
+        }
+
+        function buildDriveCurve(driveDb, foldPercent) {
+            const samples = 1024;
+            const curve = new Float32Array(samples);
+            const foldMix = Math.max(0, Math.min(1, foldPercent));
+            const driveGain = dbToLinear(driveDb);
+            for (let i = 0; i < samples; i++) {
+                const x = (i / (samples - 1)) * 2 - 1;
+                const driven = Math.tanh(x * driveGain * 2);
+                const folded = Math.sin(driven * (1 + foldMix * 4));
+                curve[i] = (1 - foldMix) * driven + foldMix * folded;
+            }
+            return curve;
+        }
+
+        function ensureDriveCurve() {
+            if (!driveCurve) {
+                driveCurve = buildDriveCurve(synthParams.driveAmount, synthParams.foldAmount / 100);
+            }
+            return driveCurve;
+        }
+
+        function applyDriveSettingsToVoice(voice, linearGain, tiltGain, time) {
+            if (!voice) {
+                return;
+            }
+            if (voice.drivePreGain) {
+                voice.drivePreGain.gain.setValueAtTime(linearGain, time);
+            }
+            if (voice.driveWaveShaper) {
+                voice.driveWaveShaper.curve = ensureDriveCurve();
+            }
+            if (voice.toneFilter) {
+                voice.toneFilter.gain.setValueAtTime(tiltGain, time);
+            }
+        }
+
+        function updateDriveModuleSettings() {
+            driveCurve = buildDriveCurve(synthParams.driveAmount, synthParams.foldAmount / 100);
+            if (!audioContext) {
+                return;
+            }
+            const linearGain = dbToLinear(synthParams.driveAmount);
+            const tiltGain = synthParams.toneTilt;
+            const time = audioContext.currentTime;
+            Object.values(activeOscillators).forEach(voice => applyDriveSettingsToVoice(voice, linearGain, tiltGain, time));
+        }
+
+        function applyTransientEnvelope(node, startTime) {
+            if (!node) {
+                return;
+            }
+            node.gain.cancelScheduledValues(startTime);
+            node.gain.setValueAtTime(1, startTime);
+            if (synthParams.transientAmount <= 0.001) {
+                return;
+            }
+            const boost = dbToLinear(synthParams.transientAmount);
+            const length = Math.max(0.005, synthParams.transientLength);
+            node.gain.setValueAtTime(boost, startTime);
+            node.gain.linearRampToValueAtTime(1, startTime + length);
         }
 
         function midiNoteToFrequency(noteNumber) {
@@ -1131,6 +1256,10 @@
             const osc1 = audioContext.createOscillator();
             const osc2 = audioContext.createOscillator();
             const osc2Gain = audioContext.createGain();
+            const transientGain = audioContext.createGain();
+            const drivePreGain = audioContext.createGain();
+            const driveWaveShaper = audioContext.createWaveShaper();
+            const toneFilter = audioContext.createBiquadFilter();
             const gainNode = audioContext.createGain();
             const filter = audioContext.createBiquadFilter();
             const now = audioContext.currentTime;
@@ -1142,6 +1271,19 @@
             osc2.frequency.setValueAtTime(frequency, now);
             osc2.detune.setValueAtTime(synthParams.osc2Detune, now);
             osc2Gain.gain.setValueAtTime(synthParams.osc2Level, now);
+
+            transientGain.gain.setValueAtTime(1, now);
+            applyTransientEnvelope(transientGain, now);
+
+            driveWaveShaper.oversample = '4x';
+            driveWaveShaper.curve = ensureDriveCurve();
+
+            const driveLinearGain = dbToLinear(synthParams.driveAmount);
+            drivePreGain.gain.setValueAtTime(driveLinearGain, now);
+
+            toneFilter.type = 'highshelf';
+            toneFilter.frequency.setValueAtTime(1800, now);
+            toneFilter.gain.setValueAtTime(synthParams.toneTilt, now);
 
             filter.type = synthParams.filterType;
             filter.frequency.setValueAtTime(synthParams.filterCutoff, now);
@@ -1159,16 +1301,21 @@
                 now + attackTime + decayTime
             );
 
-            osc1.connect(filter);
+            osc1.connect(transientGain);
             osc2.connect(osc2Gain);
-            osc2Gain.connect(filter);
+            osc2Gain.connect(transientGain);
+            transientGain.connect(drivePreGain);
+            drivePreGain.connect(driveWaveShaper);
+            driveWaveShaper.connect(toneFilter);
+            toneFilter.connect(filter);
             filter.connect(gainNode);
             gainNode.connect(masterGain);
 
             osc1.start();
             osc2.start();
 
-            const voice = { osc1, osc2, osc2Gain, gainNode, filter, uiKey };
+            const voice = { osc1, osc2, osc2Gain, transientGain, drivePreGain, driveWaveShaper, toneFilter, gainNode, filter, uiKey };
+            applyDriveSettingsToVoice(voice, driveLinearGain, synthParams.toneTilt, now);
             activeOscillators[key] = voice;
             rebuildVoiceLFO(voice);
 
@@ -1220,6 +1367,11 @@
             const envDecayValue = document.getElementById('envDecayValue');
             const envSustainValue = document.getElementById('envSustainValue');
             const envReleaseValue = document.getElementById('envReleaseValue');
+            const transientAmountValue = document.getElementById('transientAmountValue');
+            const transientLengthValue = document.getElementById('transientLengthValue');
+            const driveAmountValue = document.getElementById('driveAmountValue');
+            const foldAmountValue = document.getElementById('foldAmountValue');
+            const toneTiltValue = document.getElementById('toneTiltValue');
 
             if (osc2DetuneSlider && osc2DetuneValue) {
                 osc2DetuneSlider.value = centsToDetuneSlider(synthParams.osc2Detune);
@@ -1246,6 +1398,21 @@
             if (envReleaseValue) {
                 envReleaseValue.textContent = synthParams.envRelease.toFixed(2) + 's';
             }
+            if (transientAmountValue) {
+                transientAmountValue.textContent = `+${synthParams.transientAmount.toFixed(1)} dB`;
+            }
+            if (transientLengthValue) {
+                transientLengthValue.textContent = Math.round(synthParams.transientLength * 1000) + 'ms';
+            }
+            if (driveAmountValue) {
+                driveAmountValue.textContent = `+${synthParams.driveAmount.toFixed(1)} dB`;
+            }
+            if (foldAmountValue) {
+                foldAmountValue.textContent = Math.round(synthParams.foldAmount) + '%';
+            }
+            if (toneTiltValue) {
+                toneTiltValue.textContent = synthParams.toneTilt.toFixed(1) + ' dB';
+            }
 
             const envAttackSlider = document.getElementById('envAttack');
             if (envAttackSlider) {
@@ -1262,6 +1429,26 @@
             const envReleaseSlider = document.getElementById('envRelease');
             if (envReleaseSlider) {
                 envReleaseSlider.value = synthParams.envRelease;
+            }
+            const transientAmountSlider = document.getElementById('transientAmount');
+            if (transientAmountSlider) {
+                transientAmountSlider.value = synthParams.transientAmount;
+            }
+            const transientLengthSlider = document.getElementById('transientLength');
+            if (transientLengthSlider) {
+                transientLengthSlider.value = Math.round(synthParams.transientLength * 1000);
+            }
+            const driveAmountSlider = document.getElementById('driveAmount');
+            if (driveAmountSlider) {
+                driveAmountSlider.value = synthParams.driveAmount;
+            }
+            const foldAmountSlider = document.getElementById('foldAmount');
+            if (foldAmountSlider) {
+                foldAmountSlider.value = synthParams.foldAmount;
+            }
+            const toneTiltSlider = document.getElementById('toneTilt');
+            if (toneTiltSlider) {
+                toneTiltSlider.value = synthParams.toneTilt;
             }
 
             document.querySelectorAll('.wave-btn').forEach(btn => {
@@ -1404,6 +1591,55 @@
                 });
             }
 
+            if (transientAmountSlider) {
+                transientAmountSlider.addEventListener('input', (e) => {
+                    synthParams.transientAmount = parseFloat(e.target.value);
+                    if (transientAmountValue) {
+                        transientAmountValue.textContent = `+${synthParams.transientAmount.toFixed(1)} dB`;
+                    }
+                });
+            }
+
+            if (transientLengthSlider) {
+                transientLengthSlider.addEventListener('input', (e) => {
+                    const lengthMs = parseInt(e.target.value, 10);
+                    synthParams.transientLength = lengthMs / 1000;
+                    if (transientLengthValue) {
+                        transientLengthValue.textContent = lengthMs + 'ms';
+                    }
+                });
+            }
+
+            if (driveAmountSlider) {
+                driveAmountSlider.addEventListener('input', (e) => {
+                    synthParams.driveAmount = parseFloat(e.target.value);
+                    if (driveAmountValue) {
+                        driveAmountValue.textContent = `+${synthParams.driveAmount.toFixed(1)} dB`;
+                    }
+                    updateDriveModuleSettings();
+                });
+            }
+
+            if (foldAmountSlider) {
+                foldAmountSlider.addEventListener('input', (e) => {
+                    synthParams.foldAmount = parseFloat(e.target.value);
+                    if (foldAmountValue) {
+                        foldAmountValue.textContent = Math.round(synthParams.foldAmount) + '%';
+                    }
+                    updateDriveModuleSettings();
+                });
+            }
+
+            if (toneTiltSlider) {
+                toneTiltSlider.addEventListener('input', (e) => {
+                    synthParams.toneTilt = parseFloat(e.target.value);
+                    if (toneTiltValue) {
+                        toneTiltValue.textContent = synthParams.toneTilt.toFixed(1) + ' dB';
+                    }
+                    updateDriveModuleSettings();
+                });
+            }
+
             document.getElementById('filterType').addEventListener('change', (e) => {
                 synthParams.filterType = e.target.value;
                 Object.values(activeOscillators).forEach(voice => {
@@ -1456,6 +1692,8 @@
                 document.getElementById('mixValue').textContent = synthParams.reverbMix.toFixed(0) + '%';
                 updateReverbMix();
             });
+
+            updateDriveModuleSettings();
         }
 
         async function handleKeyDown(e) {
