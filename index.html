@@ -270,8 +270,8 @@
 
         .synth-controls {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
             margin-top: 30px;
             margin-bottom: 30px;
         }
@@ -283,6 +283,8 @@
             color: #f5f5f5;
             box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.5);
             border: 2px solid #070707;
+            display: flex;
+            flex-direction: column;
         }
 
         .control-panel h3 {
@@ -293,6 +295,20 @@
             color: var(--accent-primary);
             border-bottom: 2px solid var(--accent-primary);
             padding-bottom: 8px;
+        }
+
+        .control-panel h4 {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #f1c769;
+            margin-bottom: 12px;
+        }
+
+        .sub-panel {
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .control-group {
@@ -439,6 +455,12 @@
         .wave-btn:hover {
             border-color: var(--accent-primary);
         }
+
+        @media (min-width: 1100px) {
+            .synth-controls {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
     </style>
 </head>
 <body>
@@ -483,6 +505,116 @@
                         <div class="wave-btn" data-wave="triangle">Tri</div>
                     </div>
                 </div>
+
+                <div class="sub-panel">
+                    <h4>Oscillator 2</h4>
+                    <div class="control-group">
+                        <label>Waveform</label>
+                        <select id="osc2Waveform">
+                            <option value="sine">Sine</option>
+                            <option value="square">Square</option>
+                            <option value="sawtooth" selected>Sawtooth</option>
+                            <option value="triangle">Triangle</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Detune</label>
+                        <input type="range" id="osc2Detune" min="-100" max="100" value="0" step="1">
+                        <div class="slider-value">
+                            <span>-1200¢</span>
+                            <span id="osc2DetuneValue">0¢</span>
+                            <span>+1200¢</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Level</label>
+                        <input type="range" id="osc2Level" min="0" max="1" step="0.01" value="0.5">
+                        <div class="slider-value">
+                            <span>Mute</span>
+                            <span id="osc2LevelValue">50%</span>
+                            <span>Full</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sub-panel">
+                    <h4>Amplitude Envelope</h4>
+                    <div class="control-group">
+                        <label>Attack</label>
+                        <input type="range" id="envAttack" min="0" max="2" step="0.01" value="0.03">
+                        <div class="slider-value">
+                            <span>0s</span>
+                            <span id="envAttackValue">0.03s</span>
+                            <span>2s</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Decay</label>
+                        <input type="range" id="envDecay" min="0" max="2" step="0.01" value="0.2">
+                        <div class="slider-value">
+                            <span>0s</span>
+                            <span id="envDecayValue">0.20s</span>
+                            <span>2s</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Sustain</label>
+                        <input type="range" id="envSustain" min="0" max="100" step="1" value="70">
+                        <div class="slider-value">
+                            <span>0%</span>
+                            <span id="envSustainValue">70%</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Release</label>
+                        <input type="range" id="envRelease" min="0" max="4" step="0.01" value="0.4">
+                        <div class="slider-value">
+                            <span>0s</span>
+                            <span id="envReleaseValue">0.40s</span>
+                            <span>4s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🌐 LFO</h3>
+                <div class="control-group">
+                    <label>Target</label>
+                    <select id="lfoTarget">
+                        <option value="off" selected>Off</option>
+                        <option value="pitch">Pitch</option>
+                        <option value="filter">Filter</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Waveform</label>
+                    <select id="lfoWaveform">
+                        <option value="sine" selected>Sine</option>
+                        <option value="triangle">Triangle</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Saw</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Rate</label>
+                    <input type="range" id="lfoRate" min="0.1" max="15" value="4" step="0.1">
+                    <div class="slider-value">
+                        <span>0.1Hz</span>
+                        <span id="lfoRateValue">4.0Hz</span>
+                        <span>15Hz</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Depth</label>
+                    <input type="range" id="lfoDepth" min="0" max="100" value="25" step="1">
+                    <div class="slider-value">
+                        <span>Subtle</span>
+                        <span id="lfoDepthValue">25</span>
+                        <span>Wide</span>
+                    </div>
+                </div>
             </div>
 
             <div class="control-panel">
@@ -517,7 +649,7 @@
             </div>
 
             <div class="control-panel">
-                <h3>🌊 Global Reverb</h3>
+                <h3>🌊 Reverb</h3>
                 <div class="control-group">
                     <label>Room Size</label>
                     <input type="range" id="reverbRoomSize" min="0.1" max="5" value="1.5" step="0.1">
@@ -556,7 +688,7 @@
                 Flip the illuminated <strong>power switch</strong> to boot the synth.
                 Use keyboard keys <strong>A, S, D, F, G, H, J, K</strong> to play notes.
                 Change octaves with the module buttons or tap <strong>Z</strong> (down) / <strong>X</strong> (up).
-                Dial in oscillator, filter, and reverb to sculpt vintage tones.
+                Layer Oscillator 2 detune and route the LFO for classic vibrato or filter sweeps.
             </p>
         </div>
     </div>
@@ -577,7 +709,18 @@
             filterResonance: 1,
             reverbRoomSize: 1.5,
             reverbDecay: 2,
-            reverbMix: 30
+            reverbMix: 30,
+            osc2Waveform: 'sawtooth',
+            osc2Detune: 0,
+            osc2Level: 0.5,
+            lfoTarget: 'off',
+            lfoWaveform: 'sine',
+            lfoRate: 4,
+            lfoDepth: 25,
+            envAttack: 0.03,
+            envDecay: 0.2,
+            envSustain: 0.7,
+            envRelease: 0.4
         };
 
         const noteFrequencies = {
@@ -601,6 +744,27 @@
             'j': 'B',
             'k': 'C2'
         };
+
+        const DETUNE_MAX_CENTS = 1200;
+        const DETUNE_CURVE_POWER = 1.7;
+        const VOICE_MAX_GAIN = 0.32;
+
+        function formatDetune(value) {
+            const rounded = Math.round(value);
+            return `${rounded > 0 ? '+' : ''}${rounded}¢`;
+        }
+
+        function detuneSliderToCents(value) {
+            const normalized = value / 100; // -1..1
+            const curved = Math.sign(normalized) * Math.pow(Math.abs(normalized), DETUNE_CURVE_POWER);
+            return curved * DETUNE_MAX_CENTS;
+        }
+
+        function centsToDetuneSlider(cents) {
+            const clamped = Math.max(-DETUNE_MAX_CENTS, Math.min(DETUNE_MAX_CENTS, cents));
+            const normalized = Math.sign(clamped) * Math.pow(Math.abs(clamped) / DETUNE_MAX_CENTS, 1 / DETUNE_CURVE_POWER);
+            return normalized * 100;
+        }
 
         function init() {
             createKeyboard();
@@ -745,6 +909,72 @@
             }
         }
 
+        function createVoiceLFO(voice) {
+            if (!audioContext || !voice) {
+                return null;
+            }
+            if (synthParams.lfoTarget === 'off' || synthParams.lfoDepth <= 0) {
+                return null;
+            }
+
+            const lfoOsc = audioContext.createOscillator();
+            const lfoGain = audioContext.createGain();
+
+            lfoOsc.type = synthParams.lfoWaveform;
+            lfoOsc.frequency.setValueAtTime(synthParams.lfoRate, audioContext.currentTime);
+
+            if (synthParams.lfoTarget === 'pitch') {
+                lfoGain.gain.setValueAtTime(synthParams.lfoDepth, audioContext.currentTime);
+                lfoOsc.connect(lfoGain);
+                if (voice.osc1) {
+                    lfoGain.connect(voice.osc1.detune);
+                }
+                if (voice.osc2) {
+                    lfoGain.connect(voice.osc2.detune);
+                }
+            } else if (synthParams.lfoTarget === 'filter' && voice.filter) {
+                lfoGain.gain.setValueAtTime(synthParams.lfoDepth * 20, audioContext.currentTime);
+                lfoOsc.connect(lfoGain);
+                lfoGain.connect(voice.filter.frequency);
+            } else {
+                lfoOsc.disconnect();
+                lfoGain.disconnect();
+                return null;
+            }
+
+            lfoOsc.start();
+            return { lfoOsc, lfoGain };
+        }
+
+        function teardownVoiceLFO(voice) {
+            if (voice.lfoOsc) {
+                try {
+                    voice.lfoOsc.stop();
+                } catch (error) {
+                    /* no-op */
+                }
+                voice.lfoOsc.disconnect();
+                delete voice.lfoOsc;
+            }
+            if (voice.lfoGain) {
+                voice.lfoGain.disconnect();
+                delete voice.lfoGain;
+            }
+        }
+
+        function rebuildVoiceLFO(voice) {
+            teardownVoiceLFO(voice);
+            const lfoNodes = createVoiceLFO(voice);
+            if (lfoNodes) {
+                voice.lfoOsc = lfoNodes.lfoOsc;
+                voice.lfoGain = lfoNodes.lfoGain;
+            }
+        }
+
+        function rebuildAllVoiceLFOs() {
+            Object.values(activeOscillators).forEach(voice => rebuildVoiceLFO(voice));
+        }
+
         async function playNote(note, key) {
             if (!audioContext || audioContext.state !== 'running') {
                 await startAudio();
@@ -763,27 +993,49 @@
             const octaveMultiplier = Math.pow(2, currentOctave - 4);
             const frequency = baseFreq * octaveMultiplier;
 
-            const oscillator = audioContext.createOscillator();
+            const osc1 = audioContext.createOscillator();
+            const osc2 = audioContext.createOscillator();
+            const osc2Gain = audioContext.createGain();
             const gainNode = audioContext.createGain();
             const filter = audioContext.createBiquadFilter();
+            const now = audioContext.currentTime;
 
-            oscillator.type = synthParams.waveform;
-            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            osc1.type = synthParams.waveform;
+            osc1.frequency.setValueAtTime(frequency, now);
+
+            osc2.type = synthParams.osc2Waveform;
+            osc2.frequency.setValueAtTime(frequency, now);
+            osc2.detune.setValueAtTime(synthParams.osc2Detune, now);
+            osc2Gain.gain.setValueAtTime(synthParams.osc2Level, now);
 
             filter.type = synthParams.filterType;
-            filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
-            filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+            filter.frequency.setValueAtTime(synthParams.filterCutoff, now);
+            filter.Q.setValueAtTime(synthParams.filterResonance, now);
 
-            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-            gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+            const attackTime = Math.max(0.001, synthParams.envAttack);
+            const decayTime = Math.max(0.001, synthParams.envDecay);
+            const sustainLevel = Math.max(0, Math.min(1, synthParams.envSustain));
 
-            oscillator.connect(filter);
+            gainNode.gain.cancelScheduledValues(now);
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(VOICE_MAX_GAIN, now + attackTime);
+            gainNode.gain.linearRampToValueAtTime(
+                VOICE_MAX_GAIN * sustainLevel,
+                now + attackTime + decayTime
+            );
+
+            osc1.connect(filter);
+            osc2.connect(osc2Gain);
+            osc2Gain.connect(filter);
             filter.connect(gainNode);
             gainNode.connect(masterGain);
 
-            oscillator.start();
+            osc1.start();
+            osc2.start();
 
-            activeOscillators[key] = { oscillator, gainNode, filter };
+            const voice = { osc1, osc2, osc2Gain, gainNode, filter };
+            activeOscillators[key] = voice;
+            rebuildVoiceLFO(voice);
 
             const keyElement = document.querySelector(`[data-key="${key}"]`);
             if (keyElement) {
@@ -792,14 +1044,28 @@
         }
 
         function stopNote(key) {
-            if (activeOscillators[key]) {
-                const { oscillator, gainNode } = activeOscillators[key];
-                
-                gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
-                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
-                
-                oscillator.stop(audioContext.currentTime + 0.1);
-                
+            const voice = activeOscillators[key];
+            if (voice) {
+                const { gainNode, osc1, osc2 } = voice;
+                const now = audioContext.currentTime;
+                const releaseTime = Math.max(0.01, synthParams.envRelease);
+                const stopTime = now + releaseTime + 0.05;
+
+                gainNode.gain.cancelScheduledValues(now);
+                gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+                gainNode.gain.linearRampToValueAtTime(0, now + releaseTime);
+
+                [osc1, osc2].forEach(osc => {
+                    if (osc) {
+                        try {
+                            osc.stop(stopTime);
+                        } catch (error) {
+                            /* no-op */
+                        }
+                    }
+                });
+
+                teardownVoiceLFO(voice);
                 delete activeOscillators[key];
 
                 const keyElement = document.querySelector(`[data-key="${key}"]`);
@@ -810,40 +1076,231 @@
         }
 
         function setupSynthControls() {
+            const osc2DetuneSlider = document.getElementById('osc2Detune');
+            const osc2DetuneValue = document.getElementById('osc2DetuneValue');
+            const osc2LevelValue = document.getElementById('osc2LevelValue');
+            const lfoRateValue = document.getElementById('lfoRateValue');
+            const lfoDepthValue = document.getElementById('lfoDepthValue');
+            const envAttackValue = document.getElementById('envAttackValue');
+            const envDecayValue = document.getElementById('envDecayValue');
+            const envSustainValue = document.getElementById('envSustainValue');
+            const envReleaseValue = document.getElementById('envReleaseValue');
+
+            if (osc2DetuneSlider && osc2DetuneValue) {
+                osc2DetuneSlider.value = centsToDetuneSlider(synthParams.osc2Detune);
+                osc2DetuneValue.textContent = formatDetune(synthParams.osc2Detune);
+            }
+            if (osc2LevelValue) {
+                osc2LevelValue.textContent = Math.round(synthParams.osc2Level * 100) + '%';
+            }
+            if (lfoRateValue) {
+                lfoRateValue.textContent = synthParams.lfoRate.toFixed(1) + 'Hz';
+            }
+            if (lfoDepthValue) {
+                lfoDepthValue.textContent = synthParams.lfoDepth.toFixed(0);
+            }
+            if (envAttackValue) {
+                envAttackValue.textContent = synthParams.envAttack.toFixed(2) + 's';
+            }
+            if (envDecayValue) {
+                envDecayValue.textContent = synthParams.envDecay.toFixed(2) + 's';
+            }
+            if (envSustainValue) {
+                envSustainValue.textContent = Math.round(synthParams.envSustain * 100) + '%';
+            }
+            if (envReleaseValue) {
+                envReleaseValue.textContent = synthParams.envRelease.toFixed(2) + 's';
+            }
+
+            const envAttackSlider = document.getElementById('envAttack');
+            if (envAttackSlider) {
+                envAttackSlider.value = synthParams.envAttack;
+            }
+            const envDecaySlider = document.getElementById('envDecay');
+            if (envDecaySlider) {
+                envDecaySlider.value = synthParams.envDecay;
+            }
+            const envSustainSlider = document.getElementById('envSustain');
+            if (envSustainSlider) {
+                envSustainSlider.value = Math.round(synthParams.envSustain * 100);
+            }
+            const envReleaseSlider = document.getElementById('envRelease');
+            if (envReleaseSlider) {
+                envReleaseSlider.value = synthParams.envRelease;
+            }
+
             document.querySelectorAll('.wave-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     document.querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     synthParams.waveform = btn.dataset.wave;
                     
-                    Object.values(activeOscillators).forEach(osc => {
-                        if (osc.oscillator.type !== synthParams.waveform) {
-                            osc.oscillator.type = synthParams.waveform;
+                    Object.values(activeOscillators).forEach(voice => {
+                        if (voice.osc1 && voice.osc1.type !== synthParams.waveform) {
+                            voice.osc1.type = synthParams.waveform;
                         }
                     });
                 });
             });
 
+            document.getElementById('osc2Waveform').addEventListener('change', (e) => {
+                synthParams.osc2Waveform = e.target.value;
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.osc2) {
+                        voice.osc2.type = synthParams.osc2Waveform;
+                    }
+                });
+            });
+
+            document.getElementById('osc2Detune').addEventListener('input', (e) => {
+                const sliderPosition = parseFloat(e.target.value);
+                const cents = detuneSliderToCents(sliderPosition);
+                synthParams.osc2Detune = cents;
+                if (osc2DetuneValue) {
+                    osc2DetuneValue.textContent = formatDetune(cents);
+                }
+                if (!audioContext) {
+                    return;
+                }
+                const time = audioContext.currentTime;
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.osc2) {
+                        voice.osc2.detune.setValueAtTime(cents, time);
+                    }
+                });
+            });
+
+            document.getElementById('osc2Level').addEventListener('input', (e) => {
+                synthParams.osc2Level = parseFloat(e.target.value);
+                if (osc2LevelValue) {
+                    osc2LevelValue.textContent = Math.round(synthParams.osc2Level * 100) + '%';
+                }
+                if (!audioContext) {
+                    return;
+                }
+                const time = audioContext.currentTime;
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.osc2Gain) {
+                        voice.osc2Gain.gain.setValueAtTime(synthParams.osc2Level, time);
+                    }
+                });
+            });
+
+            document.getElementById('lfoTarget').addEventListener('change', (e) => {
+                synthParams.lfoTarget = e.target.value;
+                rebuildAllVoiceLFOs();
+            });
+
+            document.getElementById('lfoWaveform').addEventListener('change', (e) => {
+                synthParams.lfoWaveform = e.target.value;
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.lfoOsc) {
+                        voice.lfoOsc.type = synthParams.lfoWaveform;
+                    }
+                });
+            });
+
+            document.getElementById('lfoRate').addEventListener('input', (e) => {
+                synthParams.lfoRate = parseFloat(e.target.value);
+                if (lfoRateValue) {
+                    lfoRateValue.textContent = synthParams.lfoRate.toFixed(1) + 'Hz';
+                }
+                if (!audioContext) {
+                    return;
+                }
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.lfoOsc) {
+                        voice.lfoOsc.frequency.setValueAtTime(synthParams.lfoRate, audioContext.currentTime);
+                    }
+                });
+            });
+
+            document.getElementById('lfoDepth').addEventListener('input', (e) => {
+                synthParams.lfoDepth = parseFloat(e.target.value);
+                if (lfoDepthValue) {
+                    lfoDepthValue.textContent = synthParams.lfoDepth.toFixed(0);
+                }
+                if (!audioContext) {
+                    return;
+                }
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.lfoGain) {
+                        const targetGain = synthParams.lfoTarget === 'filter'
+                            ? synthParams.lfoDepth * 20
+                            : synthParams.lfoDepth;
+                        voice.lfoGain.gain.setValueAtTime(targetGain, audioContext.currentTime);
+                    }
+                });
+            });
+
+            if (envAttackSlider) {
+                envAttackSlider.addEventListener('input', (e) => {
+                    synthParams.envAttack = parseFloat(e.target.value);
+                    if (envAttackValue) {
+                        envAttackValue.textContent = synthParams.envAttack.toFixed(2) + 's';
+                    }
+                });
+            }
+
+            if (envDecaySlider) {
+                envDecaySlider.addEventListener('input', (e) => {
+                    synthParams.envDecay = parseFloat(e.target.value);
+                    if (envDecayValue) {
+                        envDecayValue.textContent = synthParams.envDecay.toFixed(2) + 's';
+                    }
+                });
+            }
+
+            if (envSustainSlider) {
+                envSustainSlider.addEventListener('input', (e) => {
+                    synthParams.envSustain = parseFloat(e.target.value) / 100;
+                    if (envSustainValue) {
+                        envSustainValue.textContent = Math.round(synthParams.envSustain * 100) + '%';
+                    }
+                });
+            }
+
+            if (envReleaseSlider) {
+                envReleaseSlider.addEventListener('input', (e) => {
+                    synthParams.envRelease = parseFloat(e.target.value);
+                    if (envReleaseValue) {
+                        envReleaseValue.textContent = synthParams.envRelease.toFixed(2) + 's';
+                    }
+                });
+            }
+
             document.getElementById('filterType').addEventListener('change', (e) => {
                 synthParams.filterType = e.target.value;
-                Object.values(activeOscillators).forEach(osc => {
-                    osc.filter.type = synthParams.filterType;
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.filter) {
+                        voice.filter.type = synthParams.filterType;
+                    }
                 });
             });
 
             document.getElementById('filterCutoff').addEventListener('input', (e) => {
                 synthParams.filterCutoff = parseFloat(e.target.value);
                 document.getElementById('cutoffValue').textContent = Math.round(synthParams.filterCutoff) + 'Hz';
-                Object.values(activeOscillators).forEach(osc => {
-                    osc.filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
+                if (!audioContext) {
+                    return;
+                }
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.filter) {
+                        voice.filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
+                    }
                 });
             });
 
             document.getElementById('filterResonance').addEventListener('input', (e) => {
                 synthParams.filterResonance = parseFloat(e.target.value);
                 document.getElementById('resonanceValue').textContent = synthParams.filterResonance.toFixed(1);
-                Object.values(activeOscillators).forEach(osc => {
-                    osc.filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+                if (!audioContext) {
+                    return;
+                }
+                Object.values(activeOscillators).forEach(voice => {
+                    if (voice.filter) {
+                        voice.filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+                    }
                 });
             });
 
