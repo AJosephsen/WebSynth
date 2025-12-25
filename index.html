@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSynth - Software Synthesis Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rack-bg: #1b1b1b;
+            --panel-bg: #2d2d2d;
+            --accent-primary: #f2c744;
+            --accent-secondary: #f8633b;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Share Tech Mono', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(circle at top, #2f2f2f 0%, #080808 60%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #f4f4f4;
+        }
+
+        .container {
+            background: linear-gradient(145deg, #2b2b2b, #1c1c1c);
+            border-radius: 22px;
+            padding: 40px;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.7), 0 25px 60px rgba(0, 0, 0, 0.8);
+            max-width: 1100px;
+            width: 100%;
+            border: 4px solid #050505;
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            color: #f7dd9b;
+            margin-bottom: 10px;
+            text-align: center;
+            letter-spacing: 4px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #c6c6c6;
+            margin-bottom: 30px;
+            font-size: 13px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .top-panel {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(120deg, #3a3a3a, #1b1b1b);
+            padding: 20px 25px;
+            border-radius: 14px;
+            border: 2px solid #0f0f0f;
+            box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.6);
+        }
+
+        .power-module {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            background: #1a1a1a;
+            padding: 15px 25px;
+            border-radius: 12px;
+            border: 2px solid #070707;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.6);
+        }
+
+        .power-label {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #f7dd9b;
+        }
+
+        .status-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            margin-top: 6px;
+            background: #3c3c3c;
+            box-shadow: inset 0 0 4px #000;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .status-dot.on {
+            background: #4eff5a;
+            box-shadow: 0 0 12px #62ff6c;
+        }
+
+        .power-switch {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .power-switch input {
+            appearance: none;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+
+        .switch-body {
+            width: 90px;
+            height: 36px;
+            border-radius: 18px;
+            background: linear-gradient(145deg, #3c3c3c, #1f1f1f);
+            border: 2px solid #070707;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 8px;
+            position: relative;
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.6);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+
+        .switch-label {
+            flex: 1;
+            text-align: center;
+            color: #777;
+            z-index: 1;
+        }
+
+        .switch-label.off {
+            color: #777;
+        }
+
+        .power-switch input:not(:checked) + .switch-body .switch-label.off {
+            color: #f25d4d;
+        }
+
+        .power-switch input:checked + .switch-body .switch-label.on {
+            color: var(--accent-primary);
+        }
+
+        .power-switch input:checked + .switch-body .switch-label.off {
+            color: #555;
+        }
+
+        .power-switch input:not(:checked) + .switch-body .switch-label.on {
+            color: #555;
+        }
+
+        .switch-toggle {
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            width: 36px;
+            height: 28px;
+            border-radius: 14px;
+            background: linear-gradient(145deg, #f7dd9b, #d3a749);
+            box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s ease;
+        }
+
+        .power-switch input:checked + .switch-body .switch-toggle {
+            transform: translateX(44px);
+        }
+
+        .octave-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            background: #1a1a1a;
+            padding: 12px 18px;
+            border-radius: 12px;
+            border: 2px solid #070707;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.6);
+        }
+
+        .octave-btn {
+            background: linear-gradient(145deg, var(--accent-secondary), #c94426);
+            color: #1b0101;
+            padding: 10px 20px;
+            font-size: 13px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 600;
+            box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+            transition: transform 0.1s ease;
+        }
+
+        .octave-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        #octaveDisplay {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f7dd9b;
+            min-width: 110px;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+
+        .keyboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .key {
+            background: linear-gradient(180deg, #f8f8f6 0%, #d8d8d6 70%, #b5b5b3 100%);
+            border: 3px solid #111;
+            border-radius: 6px;
+            padding: 20px 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            user-select: none;
+            box-shadow: 0 6px 0 #050505, inset 0 0 8px rgba(0, 0, 0, 0.15);
+            color: #1b1b1b;
+        }
+
+        .key:hover {
+            transform: translateY(1px);
+        }
+
+        .key.active {
+            background: linear-gradient(180deg, #f2c744 0%, #f59f35 100%);
+            color: #1b1b1b;
+            transform: translateY(3px);
+            box-shadow: 0 3px 0 #050505;
+        }
+
+        .key-label {
+            font-size: 18px;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .key-note {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .key.active .key-note {
+            color: #fff;
+        }
+
+        .synth-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+            margin-bottom: 30px;
+        }
+
+        .control-panel {
+            background: var(--panel-bg);
+            border-radius: 12px;
+            padding: 20px;
+            color: #f5f5f5;
+            box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.5);
+            border: 2px solid #070707;
+        }
+
+        .control-panel h3 {
+            margin-bottom: 15px;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent-primary);
+            border-bottom: 2px solid var(--accent-primary);
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #d4d4d4;
+            letter-spacing: 1px;
+        }
+
+        .control-group select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: 2px solid #161616;
+            background: #0e0e0e;
+            color: #fdfdfd;
+            font-size: 14px;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .control-group select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #0e0e0e;
+            outline: none;
+            border: 2px solid #161616;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, var(--accent-primary), #f39c1a);
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(255, 223, 128, 0.6);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, var(--accent-primary), #f39c1a);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 8px rgba(255, 223, 128, 0.6);
+        }
+
+        .slider-value {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 12px;
+            color: var(--accent-primary);
+        }
+
+        .info {
+            margin-top: 30px;
+            padding: 20px;
+            background: #121212;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #050505;
+            box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .info h3 {
+            color: #f7dd9b;
+            margin-bottom: 10px;
+        }
+
+        .info p {
+            color: #c4c4c4;
+            line-height: 1.6;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .status.active {
+            background: rgba(78, 255, 90, 0.15);
+            color: #4eff5a;
+            border: 1px solid #4eff5a;
+        }
+
+        .status.inactive {
+            background: rgba(255, 51, 51, 0.12);
+            color: #ff5e5e;
+            border: 1px solid #ff5e5e;
+        }
+
+        .wave-selector {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .wave-btn {
+            padding: 8px;
+            background: #0f0f0f;
+            border: 2px solid #050505;
+            border-radius: 6px;
+            color: #bbb;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .wave-btn.active {
+            background: var(--accent-primary);
+            border-color: #c98616;
+            color: #1b1b1b;
+        }
+
+        .wave-btn:hover {
+            border-color: var(--accent-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎹 WebSynth</h1>
+        <p class="subtitle">Real-Time Software Synthesis with Filters & Reverb</p>
+
+        <div class="top-panel">
+            <div class="power-module">
+                <div class="power-label">
+                    <span>Power</span>
+                    <span class="status-dot" id="powerLamp"></span>
+                </div>
+                <label class="power-switch">
+                    <input type="checkbox" id="powerToggle">
+                    <span class="switch-body">
+                        <span class="switch-label off">Off</span>
+                        <span class="switch-label on">On</span>
+                        <span class="switch-toggle"></span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="octave-controls">
+                <button class="octave-btn" id="octaveDown">Octave -</button>
+                <span id="octaveDisplay">Octave: 4</span>
+                <button class="octave-btn" id="octaveUp">Octave +</button>
+            </div>
+        </div>
+
+        <div class="status inactive" id="status">Power Rail: Standby</div>
+
+        <div class="synth-controls">
+            <div class="control-panel">
+                <h3>🎛️ Oscillator</h3>
+                <div class="control-group">
+                    <label>Waveform</label>
+                    <div class="wave-selector">
+                        <div class="wave-btn active" data-wave="sine">Sine</div>
+                        <div class="wave-btn" data-wave="square">Square</div>
+                        <div class="wave-btn" data-wave="sawtooth">Saw</div>
+                        <div class="wave-btn" data-wave="triangle">Tri</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🔊 Filter</h3>
+                <div class="control-group">
+                    <label>Filter Type</label>
+                    <select id="filterType">
+                        <option value="lowpass">Low Pass</option>
+                        <option value="highpass">High Pass</option>
+                        <option value="bandpass">Band Pass</option>
+                        <option value="notch">Notch</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Cutoff Frequency</label>
+                    <input type="range" id="filterCutoff" min="20" max="20000" value="2000" step="1">
+                    <div class="slider-value">
+                        <span>20Hz</span>
+                        <span id="cutoffValue">2000Hz</span>
+                        <span>20kHz</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Resonance (Q)</label>
+                    <input type="range" id="filterResonance" min="0.1" max="30" value="1" step="0.1">
+                    <div class="slider-value">
+                        <span>0.1</span>
+                        <span id="resonanceValue">1.0</span>
+                        <span>30</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🌊 Global Reverb</h3>
+                <div class="control-group">
+                    <label>Room Size</label>
+                    <input type="range" id="reverbRoomSize" min="0.1" max="5" value="1.5" step="0.1">
+                    <div class="slider-value">
+                        <span>Small</span>
+                        <span id="roomSizeValue">1.5s</span>
+                        <span>Large</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Decay Time</label>
+                    <input type="range" id="reverbDecay" min="0.1" max="10" value="2" step="0.1">
+                    <div class="slider-value">
+                        <span>0.1s</span>
+                        <span id="decayValue">2.0s</span>
+                        <span>10s</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Wet/Dry Mix</label>
+                    <input type="range" id="reverbMix" min="0" max="100" value="30" step="1">
+                    <div class="slider-value">
+                        <span>Dry</span>
+                        <span id="mixValue">30%</span>
+                        <span>Wet</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="keyboard" id="keyboard"></div>
+
+        <div class="info">
+            <h3>How to Play</h3>
+            <p>
+                Flip the illuminated <strong>power switch</strong> to boot the synth.
+                Use keyboard keys <strong>A, S, D, F, G, H, J, K</strong> to play notes.
+                Change octaves with the module buttons or tap <strong>Z</strong> (down) / <strong>X</strong> (up).
+                Dial in oscillator, filter, and reverb to sculpt vintage tones.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let audioContext = null;
+        let activeOscillators = {};
+        let currentOctave = 4;
+        let masterGain = null;
+        let reverbNode = null;
+        let dryGain = null;
+        let wetGain = null;
+
+        let synthParams = {
+            waveform: 'sine',
+            filterType: 'lowpass',
+            filterCutoff: 2000,
+            filterResonance: 1,
+            reverbRoomSize: 1.5,
+            reverbDecay: 2,
+            reverbMix: 30
+        };
+
+        const noteFrequencies = {
+            'C': 261.63,
+            'D': 293.66,
+            'E': 329.63,
+            'F': 349.23,
+            'G': 392.00,
+            'A': 440.00,
+            'B': 493.88,
+            'C2': 523.25
+        };
+
+        const keyMap = {
+            'a': 'C',
+            's': 'D',
+            'd': 'E',
+            'f': 'F',
+            'g': 'G',
+            'h': 'A',
+            'j': 'B',
+            'k': 'C2'
+        };
+
+        function init() {
+            createKeyboard();
+            setupEventListeners();
+            setupSynthControls();
+        }
+
+        function createKeyboard() {
+            const keyboard = document.getElementById('keyboard');
+            Object.entries(keyMap).forEach(([key, note]) => {
+                const keyElement = document.createElement('div');
+                keyElement.className = 'key';
+                keyElement.dataset.key = key;
+                keyElement.dataset.note = note;
+                keyElement.innerHTML = `
+                    <span class="key-label">${key.toUpperCase()}</span>
+                    <span class="key-note">${note}</span>
+                `;
+                
+                keyElement.addEventListener('mousedown', () => playNote(note, key));
+                keyElement.addEventListener('mouseup', () => stopNote(key));
+                keyElement.addEventListener('mouseleave', () => stopNote(key));
+                
+                keyboard.appendChild(keyElement);
+            });
+        }
+
+        function setupEventListeners() {
+            const powerToggle = document.getElementById('powerToggle');
+            powerToggle.addEventListener('change', async (e) => {
+                if (e.target.checked) {
+                    await startAudio();
+                } else {
+                    stopAudio();
+                }
+            });
+            document.getElementById('octaveUp').addEventListener('click', () => changeOctave(1));
+            document.getElementById('octaveDown').addEventListener('click', () => changeOctave(-1));
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+        }
+
+        function createReverb() {
+            const convolver = audioContext.createConvolver();
+            const reverbTime = synthParams.reverbRoomSize * synthParams.reverbDecay;
+            const sampleRate = audioContext.sampleRate;
+            const length = sampleRate * reverbTime;
+            const impulse = audioContext.createBuffer(2, length, sampleRate);
+            
+            for (let channel = 0; channel < 2; channel++) {
+                const channelData = impulse.getChannelData(channel);
+                for (let i = 0; i < length; i++) {
+                    const decay = Math.pow(1 - i / length, 2);
+                    channelData[i] = (Math.random() * 2 - 1) * decay;
+                }
+            }
+            
+            convolver.buffer = impulse;
+            return convolver;
+        }
+
+        async function startAudio() {
+            try {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    masterGain = audioContext.createGain();
+                    masterGain.gain.setValueAtTime(0.7, audioContext.currentTime);
+                    
+                    dryGain = audioContext.createGain();
+                    wetGain = audioContext.createGain();
+                    
+                    updateReverbMix();
+                    
+                    reverbNode = createReverb();
+                    
+                    masterGain.connect(dryGain);
+                    masterGain.connect(reverbNode);
+                    reverbNode.connect(wetGain);
+                    
+                    dryGain.connect(audioContext.destination);
+                    wetGain.connect(audioContext.destination);
+                }
+                
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                updateStatus(true);
+            } catch (error) {
+                console.error('Error starting audio:', error);
+                alert('Failed to start audio. Please try again.');
+            }
+        }
+
+        function stopAudio() {
+            if (audioContext) {
+                Object.keys(activeOscillators).forEach(key => stopNote(key));
+                audioContext.suspend();
+                updateStatus(false);
+            }
+        }
+
+        function updatePowerUI(active) {
+            const toggle = document.getElementById('powerToggle');
+            const lamp = document.getElementById('powerLamp');
+            if (toggle) {
+                toggle.checked = active;
+            }
+            if (lamp) {
+                lamp.classList.toggle('on', active);
+            }
+        }
+
+        function updateStatus(active) {
+            const status = document.getElementById('status');
+            if (active) {
+                status.className = 'status active';
+                status.textContent = 'Power Rail: Online';
+            } else {
+                status.className = 'status inactive';
+                status.textContent = 'Power Rail: Standby';
+            }
+            updatePowerUI(active);
+        }
+
+        function updateReverbMix() {
+            if (dryGain && wetGain) {
+                const wetAmount = synthParams.reverbMix / 100;
+                const dryAmount = 1 - wetAmount;
+                dryGain.gain.setValueAtTime(dryAmount, audioContext.currentTime);
+                wetGain.gain.setValueAtTime(wetAmount, audioContext.currentTime);
+            }
+        }
+
+        function updateReverb() {
+            if (audioContext && reverbNode) {
+                reverbNode.disconnect();
+                reverbNode = createReverb();
+                masterGain.connect(reverbNode);
+                reverbNode.connect(wetGain);
+            }
+        }
+
+        async function playNote(note, key) {
+            if (!audioContext || audioContext.state !== 'running') {
+                await startAudio();
+            }
+            
+            if (!audioContext || audioContext.state !== 'running' || !masterGain) {
+                console.warn('Audio context not ready');
+                return;
+            }
+
+            if (activeOscillators[key]) {
+                return;
+            }
+
+            const baseFreq = noteFrequencies[note];
+            const octaveMultiplier = Math.pow(2, currentOctave - 4);
+            const frequency = baseFreq * octaveMultiplier;
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            const filter = audioContext.createBiquadFilter();
+
+            oscillator.type = synthParams.waveform;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            filter.type = synthParams.filterType;
+            filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
+            filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+
+            oscillator.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(masterGain);
+
+            oscillator.start();
+
+            activeOscillators[key] = { oscillator, gainNode, filter };
+
+            const keyElement = document.querySelector(`[data-key="${key}"]`);
+            if (keyElement) {
+                keyElement.classList.add('active');
+            }
+        }
+
+        function stopNote(key) {
+            if (activeOscillators[key]) {
+                const { oscillator, gainNode } = activeOscillators[key];
+                
+                gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+                
+                oscillator.stop(audioContext.currentTime + 0.1);
+                
+                delete activeOscillators[key];
+
+                const keyElement = document.querySelector(`[data-key="${key}"]`);
+                if (keyElement) {
+                    keyElement.classList.remove('active');
+                }
+            }
+        }
+
+        function setupSynthControls() {
+            document.querySelectorAll('.wave-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    synthParams.waveform = btn.dataset.wave;
+                    
+                    Object.values(activeOscillators).forEach(osc => {
+                        if (osc.oscillator.type !== synthParams.waveform) {
+                            osc.oscillator.type = synthParams.waveform;
+                        }
+                    });
+                });
+            });
+
+            document.getElementById('filterType').addEventListener('change', (e) => {
+                synthParams.filterType = e.target.value;
+                Object.values(activeOscillators).forEach(osc => {
+                    osc.filter.type = synthParams.filterType;
+                });
+            });
+
+            document.getElementById('filterCutoff').addEventListener('input', (e) => {
+                synthParams.filterCutoff = parseFloat(e.target.value);
+                document.getElementById('cutoffValue').textContent = Math.round(synthParams.filterCutoff) + 'Hz';
+                Object.values(activeOscillators).forEach(osc => {
+                    osc.filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
+                });
+            });
+
+            document.getElementById('filterResonance').addEventListener('input', (e) => {
+                synthParams.filterResonance = parseFloat(e.target.value);
+                document.getElementById('resonanceValue').textContent = synthParams.filterResonance.toFixed(1);
+                Object.values(activeOscillators).forEach(osc => {
+                    osc.filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+                });
+            });
+
+            document.getElementById('reverbRoomSize').addEventListener('input', (e) => {
+                synthParams.reverbRoomSize = parseFloat(e.target.value);
+                document.getElementById('roomSizeValue').textContent = synthParams.reverbRoomSize.toFixed(1) + 's';
+                updateReverb();
+            });
+
+            document.getElementById('reverbDecay').addEventListener('input', (e) => {
+                synthParams.reverbDecay = parseFloat(e.target.value);
+                document.getElementById('decayValue').textContent = synthParams.reverbDecay.toFixed(1) + 's';
+                updateReverb();
+            });
+
+            document.getElementById('reverbMix').addEventListener('input', (e) => {
+                synthParams.reverbMix = parseFloat(e.target.value);
+                document.getElementById('mixValue').textContent = synthParams.reverbMix.toFixed(0) + '%';
+                updateReverbMix();
+            });
+        }
+
+        async function handleKeyDown(e) {
+            const key = e.key.toLowerCase();
+            
+            if (key === 'z') {
+                changeOctave(-1);
+                return;
+            }
+            if (key === 'x') {
+                changeOctave(1);
+                return;
+            }
+
+            if (keyMap[key] && !e.repeat) {
+                await playNote(keyMap[key], key);
+            }
+        }
+
+        function handleKeyUp(e) {
+            const key = e.key.toLowerCase();
+            if (keyMap[key]) {
+                stopNote(key);
+            }
+        }
+
+        function changeOctave(direction) {
+            currentOctave = Math.max(1, Math.min(7, currentOctave + direction));
+            document.getElementById('octaveDisplay').textContent = `Octave: ${currentOctave}`;
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSynth - Software Synthesis Explorer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #startBtn {
+            background: #4CAF50;
+            color: white;
+        }
+
+        #startBtn:hover {
+            background: #45a049;
+        }
+
+        #stopBtn {
+            background: #f44336;
+            color: white;
+        }
+
+        #stopBtn:hover {
+            background: #da190b;
+        }
+
+        .octave-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .octave-btn {
+            background: #2196F3;
+            color: white;
+            padding: 10px 20px;
+            font-size: 14px;
+        }
+
+        .octave-btn:hover {
+            background: #0b7dda;
+        }
+
+        #octaveDisplay {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .keyboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .key {
+            background: linear-gradient(145deg, #ffffff, #e6e6e6);
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            user-select: none;
+        }
+
+        .key:hover {
+            background: linear-gradient(145deg, #f0f0f0, #d9d9d9);
+        }
+
+        .key.active {
+            background: linear-gradient(145deg, #667eea, #764ba2);
+            color: white;
+            transform: scale(0.95);
+            border-color: #667eea;
+        }
+
+        .key-label {
+            font-size: 18px;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .key-note {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .key.active .key-note {
+            color: #fff;
+        }
+
+        .synth-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+            margin-bottom: 30px;
+        }
+
+        .control-panel {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-panel h3 {
+            margin-bottom: 15px;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #aaa;
+            letter-spacing: 0.5px;
+        }
+
+        .control-group select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: 2px solid #444;
+            background: #1a1a1a;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .control-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .knob-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .knob-wrapper {
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+
+        .knob {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #3a3a3a, #1a1a1a);
+            border: 3px solid #444;
+            position: relative;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+        }
+
+        .knob::after {
+            content: '';
+            position: absolute;
+            width: 4px;
+            height: 30px;
+            background: #667eea;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 2px;
+            box-shadow: 0 0 8px rgba(102, 126, 234, 0.6);
+        }
+
+        .knob-value {
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .knob-label {
+            font-size: 11px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #1a1a1a;
+            outline: none;
+            border: 2px solid #444;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #667eea, #764ba2);
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(102, 126, 234, 0.6);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #667eea, #764ba2);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 8px rgba(102, 126, 234, 0.6);
+        }
+
+        .slider-value {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #667eea;
+        }
+
+        .info {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .info h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .info p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .wave-selector {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .wave-btn {
+            padding: 8px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 6px;
+            color: #aaa;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+
+        .wave-btn.active {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+
+        .wave-btn:hover {
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎹 WebSynth</h1>
+        <p class="subtitle">Real-Time Software Synthesis with Sine Waves</p>
+
+        <div class="controls">
+            <button id="startBtn">Start Audio</button>
+            <button id="stopBtn">Stop Audio</button>
+            <div class="octave-controls">
+                <button class="octave-btn" id="octaveDown">Octave -</button>
+                <span id="octaveDisplay">Octave: 4</span>
+                <button class="octave-btn" id="octaveUp">Octave +</button>
+            </div>
+        </div>
+
+        <div class="status inactive" id="status">Audio Context: Inactive</div>
+
+        <div class="synth-controls">
+            <div class="control-panel">
+                <h3>🎛️ Oscillator</h3>
+                <div class="control-group">
+                    <label>Waveform</label>
+                    <div class="wave-selector">
+                        <div class="wave-btn active" data-wave="sine">Sine</div>
+                        <div class="wave-btn" data-wave="square">Square</div>
+                        <div class="wave-btn" data-wave="sawtooth">Saw</div>
+                        <div class="wave-btn" data-wave="triangle">Tri</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🔊 Filter</h3>
+                <div class="control-group">
+                    <label>Filter Type</label>
+                    <select id="filterType">
+                        <option value="lowpass">Low Pass</option>
+                        <option value="highpass">High Pass</option>
+                        <option value="bandpass">Band Pass</option>
+                        <option value="notch">Notch</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Cutoff Frequency</label>
+                    <input type="range" id="filterCutoff" min="20" max="20000" value="2000" step="1">
+                    <div class="slider-value">
+                        <span>20Hz</span>
+                        <span id="cutoffValue">2000Hz</span>
+                        <span>20kHz</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Resonance (Q)</label>
+                    <input type="range" id="filterResonance" min="0.1" max="30" value="1" step="0.1">
+                    <div class="slider-value">
+                        <span>0.1</span>
+                        <span id="resonanceValue">1.0</span>
+                        <span>30</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>🌊 Global Reverb</h3>
+                <div class="control-group">
+                    <label>Room Size</label>
+                    <input type="range" id="reverbRoomSize" min="0.1" max="5" value="1.5" step="0.1">
+                    <div class="slider-value">
+                        <span>Small</span>
+                        <span id="roomSizeValue">1.5s</span>
+                        <span>Large</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Decay Time</label>
+                    <input type="range" id="reverbDecay" min="0.1" max="10" value="2" step="0.1">
+                    <div class="slider-value">
+                        <span>0.1s</span>
+                        <span id="decayValue">2.0s</span>
+                        <span>10s</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Wet/Dry Mix</label>
+                    <input type="range" id="reverbMix" min="0" max="100" value="30" step="1">
+                    <div class="slider-value">
+                        <span>Dry</span>
+                        <span id="mixValue">30%</span>
+                        <span>Wet</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="keyboard" id="keyboard"></div>
+
+        <div class="info">
+            <h3>How to Play</h3>
+            <p>
+                Click the <strong>Start Audio</strong> button to initialize the audio context.
+                Use your computer keyboard to play notes: <strong>A, S, D, F, G, H, J, K</strong> keys
+                correspond to a musical scale. Change octaves with the octave buttons or use <strong>Z</strong> (down) and <strong>X</strong> (up).
+                Adjust oscillator type, filter settings, and reverb parameters for a richer, classic synth sound!
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Audio Context and Synthesis Setup
+        let audioContext = null;
+        let activeOscillators = {};
+        let currentOctave = 4;
+        let masterGain = null;
+        let reverbNode = null;
+        let dryGain = null;
+        let wetGain = null;
+
+        // Synth parameters
+        let synthParams = {
+            waveform: 'sine',
+            filterType: 'lowpass',
+            filterCutoff: 2000,
+            filterResonance: 1,
+            reverbRoomSize: 1.5,
+            reverbDecay: 2,
+            reverbMix: 30
+        };
+
+        // Note frequencies (C4 = middle C = 261.63 Hz)
+        const noteFrequencies = {
+            'C': 261.63,
+            'D': 293.66,
+            'E': 329.63,
+            'F': 349.23,
+            'G': 392.00,
+            'A': 440.00,
+            'B': 493.88,
+            'C2': 523.25
+        };
+
+        // Keyboard mapping
+            setupSynthControls();
+        const keyMap = {
+            'a': 'C',
+            's': 'D',
+            'd': 'E',
+            'f': 'F',
+            'g': 'G',
+            'h': 'A',
+            'j': 'B',
+            'k': 'C2'
+        };
+
+        // Initialize
+        function init() {
+            createKeyboard();
+            setupEventListeners();
+            setupSynthControls();
+        }
+
+        // Create visual keyboard
+        function createKeyboard() {
+            const keyboard = document.getElementById('keyboard');
+            Object.entries(keyMap).forEach(([key, note]) => {
+                const keyElement = document.createElement('div');
+                keyElement.className = 'key';
+                keyElement.dataset.key = key;
+                keyElement.dataset.note = note;
+                keyElement.innerHTML = `
+                    <span class="key-label">${key.toUpperCase()}</span>
+                    <span class="key-note">${note}</span>
+                `;
+                
+                // Mouse events
+                keyElement.addEventListener('mousedown', () => playNote(note, key));
+                keyElement.addEventListener('mouseup', () => stopNote(key));
+                keyElement.addEventListener('mouseleave', () => stopNote(key));
+                
+                keyboard.appendChild(keyElement);
+            });
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            document.getElementById('startBtn').addEventListener('click', startAudio);
+            document.getElementById('stopBtn').addEventListener('click', stopAudio);
+            document.getElementById('octaveUp').addEventListener('click', () => changeOctave(1));
+            document.getElementById('octaveDown').addEventListener('click', () => changeOctave(-1));
+
+            // Keyboard events
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+        }
+Create reverb effect
+        function createReverb() {
+            const convolver = audioContext.createConvolver();
+            const reverbTime = synthParams.reverbRoomSize * synthParams.reverbDecay;
+            const sampleRate = audioContext.sampleRate;
+            const length = sampleRate * reverbTime;
+            const impulse = audioContext.createBuffer(2, length, sampleRate);
+            
+            for (let channel = 0; channel < 2; channel++) {
+                const channelData = impulse.getChannelData(channel);
+                for (let i = 0; i < length; i++) {
+                    // Create a decaying noise impulse response
+                    const decay = Math.pow(1 - i / length, 2);
+                    channelData[i] = (Math.random() * 2 - 1) * decay;
+                }
+            }
+            
+            convolver.buffer = impulse;
+            return convolver;
+        }
+
+        // Start audio context
+        function startAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create master gain and reverb chain
+                masterGain = audioContext.createGain();
+                masterGain.gain.setValueAtTime(0.7, audioContext.currentTime);
+                
+                // Create dry/wet paths
+                dryGain = audioContext.createGain();
+                wetGain = audioContext.createGain();
+                
+                // Set initial mix
+                updateReverbMix();
+                
+                // Create reverb
+                reverbNode = createReverb();
+                
+                // Connect: masterGain splits to dry and wet paths
+                masterGain.connect(dryGain);
+                masterGain.connect(reverbNode);
+                reverbNode.connect(wetGain);
+                
+                // Both paths to destination
+                dryGain.connect(audioContext.destination);
+                wetGain.connect(audioContext.destination);
+                
+                updateaudio nodes
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            const filter = audioContext.createBiquadFilter();
+
+            // Configure oscillator
+            oscillator.type = synthParams.waveform;
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            // Configure filter
+            filter.type = synthParams.filterType;
+            filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
+            filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+
+            // Envelope for smooth attack
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+
+            // Connect: oscillator -> filter -> gain -> masterGain (which goes to dry/wet)
+            oscillator.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(masterGain);
+
+            oscillator.start();
+
+            activeOscillators[key] = { oscillator, gainNode, filter
+        // Update reverb
+        function updateReverb() {
+            if (audioContext && reverbNode) {
+                // Disconnect old reverb, filter } = activeOscillators[key];
+                
+                // Envelope for smooth release
+                gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+                
+                oscillator.stop(audioContext.currentTime + 0.1);
+                
+                delete activeOscillators[key];
+
+                // Visual feedback
+                const keyElement = document.querySelector(`[data-key="${key}"]`);
+                if (keyElement) {
+                    keyElement.classList.remove('active');
+                }
+            }
+        }
+
+        // Setup synth control listeners
+        function setupSynthControls() {
+            // Waveform selector
+            document.querySelectorAll('.wave-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    synthParams.waveform = btn.dataset.wave;
+                    
+                    // Update active oscillators
+                    Object.values(activeOscillators).forEach(osc => {
+                        if (osc.oscillator.type !== synthParams.waveform) {
+                            osc.oscillator.type = synthParams.waveform;
+                        }
+                    });
+                });
+            });
+
+            // Filter type
+            document.getElementById('filterType').addEventListener('change', (e) => {
+                synthParams.filterType = e.target.value;
+                Object.values(activeOscillators).forEach(osc => {
+                    osc.filter.type = synthParams.filterType;
+                });
+            });
+
+            // Filter cutoff
+            document.getElementById('filterCutoff').addEventListener('input', (e) => {
+                synthParams.filterCutoff = parseFloat(e.target.value);
+                document.getElementById('cutoffValue').textContent = Math.round(synthParams.filterCutoff) + 'Hz';
+                Object.values(activeOscillators).forEach(osc => {
+                    osc.filter.frequency.setValueAtTime(synthParams.filterCutoff, audioContext.currentTime);
+                });
+            });
+
+            // Filter resonance
+            document.getElementById('filterResonance').addEventListener('input', (e) => {
+                synthParams.filterResonance = parseFloat(e.target.value);
+                document.getElementById('resonanceValue').textContent = synthParams.filterResonance.toFixed(1);
+                Object.values(activeOscillators).forEach(osc => {
+                    osc.filter.Q.setValueAtTime(synthParams.filterResonance, audioContext.currentTime);
+                });
+            });
+
+            // Reverb room size
+            document.getElementById('reverbRoomSize').addEventListener('input', (e) => {
+                synthParams.reverbRoomSize = parseFloat(e.target.value);
+                document.getElementById('roomSizeValue').textContent = synthParams.reverbRoomSize.toFixed(1) + 's';
+                updateReverb();
+            });
+
+            // Reverb decay
+            document.getElementById('reverbDecay').addEventListener('input', (e) => {
+                synthParams.reverbDecay = parseFloat(e.target.value);
+                document.getElementById('decayValue').textContent = synthParams.reverbDecay.toFixed(1) + 's';
+                updateReverb();
+            });
+
+            // Reverb mix
+            document.getElementById('reverbMix').addEventListener('input', (e) => {
+                synthParams.reverbMix = parseFloat(e.target.value);
+                document.getElementById('mixValue').textContent = synthParams.reverbMix.toFixed(0) + '%';
+                updateReverbMix();
+            });f (audioContext) {
+                // Stop all active notes
+                Object.keys(activeOscillators).forEach(key => stopNote(key));
+                audioContext.suspend();
+                updateStatus(false);
+            }
+        }
+
+        // Update status display
+        function updateStatus(active) {
+            const status = document.getElementById('status');
+            if (active) {
+                status.className = 'status active';
+                status.textContent = 'Audio Context: Active 🎵';
+            } else {
+                status.className = 'status inactive';
+                status.textContent = 'Audio Context: Inactive';
+            }
+        }
+
+        // Play a note
+        async function playNote(note, key) {
+            if (!audioContext || audioContext.state !== 'running') {
+                await startAudio();
+            }
+            
+            // Ensure audio context is ready
+            if (!audioContext || audioContext.state !== 'running' || !masterGain) {
+                console.warn('Audio context not ready');
+                return;
+            }
+
+            // Don't create duplicate oscillators
+            if (activeOscillators[key]) {
+                return;
+            }
+
+            // Calculate frequency for current octave
+            const baseFreq = noteFrequencies[note];
+            const octaveMultiplier = Math.pow(2, currentOctave - 4);
+            const frequency = baseFreq * octaveMultiplier;
+
+            // Create oscillator
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            // Envelope for smooth attack
+            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.start();
+
+            activeOscillators[key] = { oscillator, gainNode };
+
+            // Visual feedback
+            const keyElement = document.querySelector(`[data-key="${key}"]`);
+            if (keyElement) {
+                keyElement.classList.add('active');
+            }
+        }
+
+        // Stop a note
+        function stopNote(key) {
+            if (activeOscillators[key]) {
+                const { oscillator, gainNode } = activeOscillators[key];
+                
+                // Envelope for smooth release
+                gainNode.gain.setValueAtTime(gainNode.gain.value, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+                
+                oscillator.stop(audioContext.currentTime + 0.1);
+                
+                delete activeOscillators[key];
+
+                // Visual feedback
+                const keyElement = document.querySelector(`[data-key="${key}"]`);
+                if (keyElement) {
+                    keyElement.classList.remove('active');
+                }
+            }
+        }
+
+        // Handle keyboard down
+        function handleKeyDown(e) {
+            const key = e.key.toLowerCase();
+            
+            // Octave controls
+            if (key === 'z') {
+                changeOctave(-1);
+                return;
+            }
+            if (key === 'x') {
+                changeOctave(1);
+                return;
+            }
+
+            // Note keys
+            if (keyMap[key] && !e.repeat) {
+                playNote(keyMap[key], key);
+            }
+        }
+
+        // Handle keyboard up
+        function handleKeyUp(e) {
+            const key = e.key.toLowerCase();
+            if (keyMap[key]) {
+                stopNote(key);
+            }
+        }
+
+        // Change octave
+        function changeOctave(direction) {
+            currentOctave = Math.max(1, Math.min(7, currentOctave + direction));
+            document.getElementById('octaveDisplay').textContent = `Octave: ${currentOctave}`;
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
