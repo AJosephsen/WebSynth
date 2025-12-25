@@ -237,6 +237,9 @@
             cursor: pointer;
             transition: all 0.1s ease;
             user-select: none;
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            touch-action: none;
             box-shadow: 0 6px 0 #050505, inset 0 0 8px rgba(0, 0, 0, 0.15);
             color: #1b1b1b;
         }
@@ -704,6 +707,7 @@
         let wetGain = null;
         let midiAccess = null;
         const midiInputHandlers = new Map();
+        const activeTouchMap = new Map();
 
         let synthParams = {
             waveform: 'sine',
@@ -792,9 +796,41 @@
                     <span class="key-note">${note}</span>
                 `;
                 
-                keyElement.addEventListener('mousedown', () => playNote(note, key));
-                keyElement.addEventListener('mouseup', () => stopNote(key));
+                keyElement.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    playNote(note, key);
+                });
+                keyElement.addEventListener('mouseup', (event) => {
+                    event.preventDefault();
+                    stopNote(key);
+                });
                 keyElement.addEventListener('mouseleave', () => stopNote(key));
+
+                keyElement.addEventListener('touchstart', (event) => {
+                    event.preventDefault();
+                    Array.from(event.changedTouches).forEach(touch => {
+                        const touchKey = `${key}-touch-${touch.identifier}`;
+                        if (activeTouchMap.has(touch.identifier)) {
+                            return;
+                        }
+                        activeTouchMap.set(touch.identifier, touchKey);
+                        playNote(note, touchKey, { uiKey: key });
+                    });
+                });
+
+                const endTouch = (event) => {
+                    event.preventDefault();
+                    Array.from(event.changedTouches).forEach(touch => {
+                        const touchKey = activeTouchMap.get(touch.identifier);
+                        if (touchKey) {
+                            stopNote(touchKey);
+                            activeTouchMap.delete(touch.identifier);
+                        }
+                    });
+                };
+
+                keyElement.addEventListener('touchend', endTouch);
+                keyElement.addEventListener('touchcancel', endTouch);
                 
                 keyboard.appendChild(keyElement);
             });
@@ -948,6 +984,7 @@
         function stopAudio() {
             if (audioContext) {
                 Object.keys(activeOscillators).forEach(key => stopNote(key));
+                activeTouchMap.clear();
                 audioContext.suspend();
                 updateStatus(false);
             }
@@ -1064,7 +1101,8 @@
             const {
                 frequencyOverride = null,
                 bypassOctave = false,
-                velocity = 1
+                velocity = 1,
+                uiKey = key
             } = options;
             if (!audioContext || audioContext.state !== 'running') {
                 await startAudio();
@@ -1130,11 +1168,11 @@
             osc1.start();
             osc2.start();
 
-            const voice = { osc1, osc2, osc2Gain, gainNode, filter };
+            const voice = { osc1, osc2, osc2Gain, gainNode, filter, uiKey };
             activeOscillators[key] = voice;
             rebuildVoiceLFO(voice);
 
-            const keyElement = document.querySelector(`[data-key="${key}"]`);
+            const keyElement = document.querySelector(`[data-key="${uiKey}"]`);
             if (keyElement) {
                 keyElement.classList.add('active');
             }
@@ -1165,7 +1203,7 @@
                 teardownVoiceLFO(voice);
                 delete activeOscillators[key];
 
-                const keyElement = document.querySelector(`[data-key="${key}"]`);
+                const keyElement = document.querySelector(`[data-key="${voice.uiKey || key}"]`);
                 if (keyElement) {
                     keyElement.classList.remove('active');
                 }
