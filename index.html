@@ -689,6 +689,7 @@
                 Use keyboard keys <strong>A, S, D, F, G, H, J, K</strong> to play notes.
                 Change octaves with the module buttons or tap <strong>Z</strong> (down) / <strong>X</strong> (up).
                 Layer Oscillator 2 detune and route the LFO for classic vibrato or filter sweeps.
+                If your browser supports the Web MIDI API, connect a hardware controller and play with full velocity sensitivity.
             </p>
         </div>
     </div>
@@ -701,6 +702,8 @@
         let reverbNode = null;
         let dryGain = null;
         let wetGain = null;
+        let midiAccess = null;
+        const midiInputHandlers = new Map();
 
         let synthParams = {
             waveform: 'sine',
@@ -766,10 +769,15 @@
             return normalized * 100;
         }
 
+        function midiNoteToFrequency(noteNumber) {
+            return 440 * Math.pow(2, (noteNumber - 69) / 12);
+        }
+
         function init() {
             createKeyboard();
             setupEventListeners();
             setupSynthControls();
+            setupMIDI();
         }
 
         function createKeyboard() {
@@ -805,6 +813,83 @@
             document.getElementById('octaveDown').addEventListener('click', () => changeOctave(-1));
             document.addEventListener('keydown', handleKeyDown);
             document.addEventListener('keyup', handleKeyUp);
+        }
+
+        async function setupMIDI() {
+            if (!navigator.requestMIDIAccess) {
+                console.warn('Web MIDI API is not supported in this browser.');
+                return;
+            }
+
+            try {
+                midiAccess = await navigator.requestMIDIAccess();
+                midiAccess.inputs.forEach(input => attachMIDIInput(input));
+                midiAccess.addEventListener('statechange', handleMIDIStateChange);
+            } catch (error) {
+                console.warn('Failed to initialize MIDI:', error);
+            }
+        }
+
+        function handleMIDIStateChange(event) {
+            const port = event.port;
+            if (!port || port.type !== 'input') {
+                return;
+            }
+
+            if (port.state === 'connected') {
+                attachMIDIInput(port);
+            } else if (port.state === 'disconnected') {
+                detachMIDIInput(port);
+            }
+        }
+
+        function attachMIDIInput(input) {
+            if (!input || midiInputHandlers.has(input.id)) {
+                return;
+            }
+
+            const handler = (event) => handleMIDIMessage(event);
+            input.addEventListener('midimessage', handler);
+            midiInputHandlers.set(input.id, handler);
+
+            if (typeof input.open === 'function') {
+                input.open().catch(() => {
+                    /* no-op */
+                });
+            }
+
+            console.log(`MIDI input connected: ${input.name}`);
+        }
+
+        function detachMIDIInput(input) {
+            const handler = midiInputHandlers.get(input.id);
+            if (handler) {
+                input.removeEventListener('midimessage', handler);
+                midiInputHandlers.delete(input.id);
+            }
+        }
+
+        async function handleMIDIMessage(event) {
+            const [status, data1, data2] = event.data;
+            const command = status & 0xf0;
+            const channel = status & 0x0f;
+            const noteNumber = data1;
+            const keyId = `midi-${channel}-${noteNumber}`;
+
+            if (command === 0x90 && data2 > 0) {
+                const frequency = midiNoteToFrequency(noteNumber);
+                const velocity = data2 / 127;
+                if (activeOscillators[keyId]) {
+                    stopNote(keyId);
+                }
+                await playNote('MIDI', keyId, {
+                    frequencyOverride: frequency,
+                    bypassOctave: true,
+                    velocity
+                });
+            } else if (command === 0x80 || (command === 0x90 && data2 === 0)) {
+                stopNote(keyId);
+            }
         }
 
         function createReverb() {
@@ -975,7 +1060,12 @@
             Object.values(activeOscillators).forEach(voice => rebuildVoiceLFO(voice));
         }
 
-        async function playNote(note, key) {
+        async function playNote(note, key, options = {}) {
+            const {
+                frequencyOverride = null,
+                bypassOctave = false,
+                velocity = 1
+            } = options;
             if (!audioContext || audioContext.state !== 'running') {
                 await startAudio();
             }
@@ -989,9 +1079,16 @@
                 return;
             }
 
-            const baseFreq = noteFrequencies[note];
-            const octaveMultiplier = Math.pow(2, currentOctave - 4);
+            const baseFreq = frequencyOverride ?? noteFrequencies[note];
+            if (!baseFreq) {
+                console.warn('Unknown note frequency for', note);
+                return;
+            }
+
+            const octaveMultiplier = bypassOctave ? 1 : Math.pow(2, currentOctave - 4);
             const frequency = baseFreq * octaveMultiplier;
+            const normalizedVelocity = Math.max(0, Math.min(1, velocity));
+            const peakGain = VOICE_MAX_GAIN * (normalizedVelocity > 0 ? normalizedVelocity : 1);
 
             const osc1 = audioContext.createOscillator();
             const osc2 = audioContext.createOscillator();
@@ -1018,9 +1115,9 @@
 
             gainNode.gain.cancelScheduledValues(now);
             gainNode.gain.setValueAtTime(0, now);
-            gainNode.gain.linearRampToValueAtTime(VOICE_MAX_GAIN, now + attackTime);
+            gainNode.gain.linearRampToValueAtTime(peakGain, now + attackTime);
             gainNode.gain.linearRampToValueAtTime(
-                VOICE_MAX_GAIN * sustainLevel,
+                peakGain * sustainLevel,
                 now + attackTime + decayTime
             );
 
