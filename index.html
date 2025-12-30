@@ -430,6 +430,41 @@
             border: 1px solid #ff5e5e;
         }
 
+        .scope-panel {
+            position: relative;
+            margin-top: 25px;
+            margin-bottom: 25px;
+            padding: 18px 22px 26px;
+            border-radius: 16px;
+            background: linear-gradient(145deg, #262626, #151515);
+            border: 2px solid #050505;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .scope-header {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 2px;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #f7dd9b;
+            margin-bottom: 12px;
+        }
+
+        .scope-header span:last-child {
+            color: #b4b4b4;
+        }
+
+        #oscilloscope {
+            width: 100%;
+            height: 200px;
+            border-radius: 12px;
+            border: 2px solid rgba(247, 221, 155, 0.3);
+            background: radial-gradient(circle at top, #101010 0%, #050505 70%);
+            display: block;
+        }
+
         .wave-selector {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -496,9 +531,17 @@
 
         <div class="status inactive" id="status">Power Rail: Standby</div>
 
+        <div class="scope-panel">
+            <div class="scope-header">
+                <span>Oscilloscope</span>
+                <span id="scopeInfo">Scope idle</span>
+            </div>
+            <canvas id="oscilloscope" width="960" height="220"></canvas>
+        </div>
+
         <div class="synth-controls">
             <div class="control-panel">
-                <h3>🎛️ Oscillator</h3>
+                <h3>🎛️ Dual Oscillators</h3>
                 <div class="control-group">
                     <label>Waveform</label>
                     <div class="wave-selector">
@@ -539,7 +582,40 @@
                         </div>
                     </div>
                 </div>
+            </div>
 
+            <div class="control-panel">
+                <h3>⚡ Phase Modulator</h3>
+                <div class="control-group">
+                    <label>Shape</label>
+                    <select id="phaseModShape">
+                        <option value="sine" selected>Sine</option>
+                        <option value="triangle">Triangle</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Saw</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Ratio</label>
+                    <select id="phaseModRatio">
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Depth</label>
+                    <input type="range" id="phaseModDepth" min="0" max="100" step="1" value="0">
+                    <div class="slider-value">
+                        <span>Clean</span>
+                        <span id="phaseModDepthValue">0%</span>
+                        <span>Wild</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <h3>📈 Amp & Transient</h3>
                 <div class="sub-panel">
                     <h4>Amplitude Envelope</h4>
                     <div class="control-group">
@@ -761,6 +837,14 @@
         let midiAccess = null;
         const midiInputHandlers = new Map();
         const activeTouchMap = new Map();
+        let analyserNode = null;
+        let scopeCanvas = null;
+        let scopeCtx = null;
+        let scopeDataArray = null;
+        let scopeAnimationFrameId = null;
+        let scopeInfoDisplay = null;
+        let scopeLastFrequency = null;
+        let scopeTapGain = null;
 
         let synthParams = {
             waveform: 'sine',
@@ -785,7 +869,10 @@
             transientLength: 0.04,
             driveAmount: 8,
             foldAmount: 20,
-            toneTilt: 0
+            toneTilt: 0,
+            phaseModShape: 'sine',
+            phaseModRatio: 1,
+            phaseModDepth: 0
         };
 
         const noteFrequencies = {
@@ -814,6 +901,162 @@
         const DETUNE_CURVE_POWER = 1.7;
         const VOICE_MAX_GAIN = 0.32;
         let driveCurve = null;
+
+        function initScopeDisplay() {
+            scopeCanvas = document.getElementById('oscilloscope');
+            scopeInfoDisplay = document.getElementById('scopeInfo');
+            if (!scopeCanvas) {
+                return;
+            }
+            scopeCtx = scopeCanvas.getContext('2d');
+            const resizeHandler = () => resizeScopeCanvas();
+            resizeHandler();
+            window.addEventListener('resize', resizeHandler);
+            startScopeRendering();
+            updateScopeInfoDisplay();
+        }
+
+        function resizeScopeCanvas() {
+            if (!scopeCanvas) {
+                return;
+            }
+            const displayWidth = scopeCanvas.clientWidth || scopeCanvas.width;
+            const displayHeight = scopeCanvas.clientHeight || scopeCanvas.height;
+            if (!displayWidth || !displayHeight) {
+                return;
+            }
+            if (scopeCanvas.width !== displayWidth) {
+                scopeCanvas.width = displayWidth;
+            }
+            if (scopeCanvas.height !== displayHeight) {
+                scopeCanvas.height = displayHeight;
+            }
+        }
+
+        function startScopeRendering() {
+            if (scopeAnimationFrameId !== null) {
+                return;
+            }
+            const loop = () => {
+                renderScopeFrame();
+                scopeAnimationFrameId = requestAnimationFrame(loop);
+            };
+            scopeAnimationFrameId = requestAnimationFrame(loop);
+        }
+
+        function setupAnalyserNode() {
+            if (!audioContext || analyserNode) {
+                return;
+            }
+            analyserNode = audioContext.createAnalyser();
+            analyserNode.fftSize = 32768;
+            analyserNode.minDecibels = -120;
+            analyserNode.maxDecibels = -10;
+            analyserNode.smoothingTimeConstant = 0.25;
+            scopeDataArray = new Float32Array(analyserNode.fftSize);
+        }
+
+        function updateScopeInfoDisplay() {
+            if (!scopeInfoDisplay) {
+                scopeInfoDisplay = document.getElementById('scopeInfo');
+            }
+            if (!scopeInfoDisplay) {
+                return;
+            }
+            if (scopeLastFrequency && audioContext && audioContext.state === 'running') {
+                scopeInfoDisplay.textContent = `${scopeLastFrequency.toFixed(1)} Hz | 4 cycles`;
+            } else if (audioContext && audioContext.state === 'running') {
+                scopeInfoDisplay.textContent = 'Awaiting note';
+            } else {
+                scopeInfoDisplay.textContent = 'Scope idle';
+            }
+        }
+
+        function drawScopeText(message) {
+            if (!scopeCtx || !scopeCanvas) {
+                return;
+            }
+            scopeCtx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+            scopeCtx.font = '12px "Share Tech Mono", monospace';
+            scopeCtx.textBaseline = 'bottom';
+            scopeCtx.textAlign = 'left';
+            scopeCtx.fillText(message, 16, scopeCanvas.height - 12);
+        }
+
+        function getScopeStartIndex(buffer, sampleCount, cycleSamples) {
+            const length = buffer.length;
+            const maxStart = Math.max(0, length - sampleCount);
+            const searchSpan = Math.min(maxStart, cycleSamples * 2);
+            const searchStart = Math.max(0, maxStart - searchSpan);
+            for (let i = maxStart; i > searchStart; i--) {
+                if (buffer[i] <= 0 && buffer[i + 1] > 0) {
+                    return i;
+                }
+            }
+            return Math.max(0, maxStart);
+        }
+
+        function renderScopeFrame() {
+            if (!scopeCtx || !scopeCanvas) {
+                return;
+            }
+            resizeScopeCanvas();
+            const width = scopeCanvas.width;
+            const height = scopeCanvas.height;
+            if (width < 2 || height < 2) {
+                return;
+            }
+            scopeCtx.fillStyle = '#050505';
+            scopeCtx.fillRect(0, 0, width, height);
+            scopeCtx.strokeStyle = 'rgba(247, 221, 155, 0.25)';
+            scopeCtx.lineWidth = 1;
+            scopeCtx.beginPath();
+            scopeCtx.moveTo(0, height / 2);
+            scopeCtx.lineTo(width, height / 2);
+            scopeCtx.stroke();
+
+            if (!analyserNode || !scopeDataArray || !audioContext || audioContext.state !== 'running') {
+                drawScopeText('Scope idle');
+                return;
+            }
+
+            analyserNode.getFloatTimeDomainData(scopeDataArray);
+
+            if (!scopeLastFrequency) {
+                drawScopeText('Awaiting frequency lock');
+                return;
+            }
+
+            const safeFrequency = Math.max(1, scopeLastFrequency);
+            const sampleRate = audioContext.sampleRate || 48000;
+            const cycleSamples = Math.max(32, Math.round(sampleRate / safeFrequency));
+            const targetSamples = Math.min(scopeDataArray.length - 1, cycleSamples * 4);
+
+            if (targetSamples < 2) {
+                drawScopeText('Signal too low');
+                return;
+            }
+
+            const startIndex = getScopeStartIndex(scopeDataArray, targetSamples, cycleSamples);
+            const step = targetSamples / width;
+
+            scopeCtx.strokeStyle = '#f7dd9b';
+            scopeCtx.lineWidth = 2;
+            scopeCtx.beginPath();
+
+            for (let x = 0; x < width; x++) {
+                const dataIndex = Math.min(scopeDataArray.length - 1, Math.floor(startIndex + x * step));
+                const sample = scopeDataArray[dataIndex] || 0;
+                const y = height / 2 - sample * (height * 0.45);
+                if (x === 0) {
+                    scopeCtx.moveTo(0, y);
+                } else {
+                    scopeCtx.lineTo(x, y);
+                }
+            }
+
+            scopeCtx.stroke();
+        }
 
         function formatDetune(value) {
             const rounded = Math.round(value);
@@ -898,6 +1141,74 @@
             node.gain.linearRampToValueAtTime(1, startTime + length);
         }
 
+        function teardownPhaseMod(voice) {
+            if (!voice) {
+                return;
+            }
+            if (voice.phaseModOsc) {
+                try {
+                    voice.phaseModOsc.stop();
+                } catch (error) {
+                    /* no-op */
+                }
+                voice.phaseModOsc.disconnect();
+                delete voice.phaseModOsc;
+            }
+            if (voice.phaseModGain) {
+                voice.phaseModGain.disconnect();
+                delete voice.phaseModGain;
+            }
+        }
+
+        function setupVoicePhaseMod(voice) {
+            if (!audioContext || !voice || !voice.osc1) {
+                return;
+            }
+            teardownPhaseMod(voice);
+            voice.carrierFrequency = voice.currentFrequency || voice.carrierFrequency;
+            if (synthParams.phaseModDepth <= 0.001 || !voice.carrierFrequency) {
+                return;
+            }
+            const modOsc = audioContext.createOscillator();
+            const modGain = audioContext.createGain();
+            modOsc.type = synthParams.phaseModShape;
+            const ratio = synthParams.phaseModRatio || 1;
+            const modFreq = voice.carrierFrequency * ratio;
+            modOsc.frequency.setValueAtTime(modFreq, audioContext.currentTime);
+            const depthHz = voice.carrierFrequency * (synthParams.phaseModDepth / 100);
+            modGain.gain.setValueAtTime(depthHz, audioContext.currentTime);
+            modOsc.connect(modGain);
+            modGain.connect(voice.osc1.frequency);
+            modOsc.start();
+            voice.phaseModOsc = modOsc;
+            voice.phaseModGain = modGain;
+        }
+
+        function updatePhaseModSettings() {
+            Object.values(activeOscillators).forEach(voice => {
+                if (!voice) {
+                    return;
+                }
+                voice.carrierFrequency = voice.currentFrequency || voice.carrierFrequency;
+                if (synthParams.phaseModDepth <= 0.001) {
+                    teardownPhaseMod(voice);
+                    return;
+                }
+                if (!voice.phaseModOsc || !voice.phaseModGain) {
+                    setupVoicePhaseMod(voice);
+                    return;
+                }
+                const ratio = synthParams.phaseModRatio || 1;
+                const depthHz = voice.carrierFrequency * (synthParams.phaseModDepth / 100);
+                voice.phaseModOsc.type = synthParams.phaseModShape;
+                voice.phaseModOsc.frequency.setValueAtTime(
+                    voice.carrierFrequency * ratio,
+                    audioContext.currentTime
+                );
+                voice.phaseModGain.gain.setValueAtTime(depthHz, audioContext.currentTime);
+            });
+        }
+
         function midiNoteToFrequency(noteNumber) {
             return 440 * Math.pow(2, (noteNumber - 69) / 12);
         }
@@ -906,6 +1217,7 @@
             createKeyboard();
             setupEventListeners();
             setupSynthControls();
+            initScopeDisplay();
             setupMIDI();
         }
 
@@ -1093,6 +1405,15 @@
                     
                     dryGain.connect(audioContext.destination);
                     wetGain.connect(audioContext.destination);
+
+                    setupAnalyserNode();
+                    if (!scopeTapGain && audioContext) {
+                        scopeTapGain = audioContext.createGain();
+                        scopeTapGain.gain.setValueAtTime(1, audioContext.currentTime);
+                    }
+                    if (scopeTapGain && analyserNode) {
+                        scopeTapGain.connect(analyserNode);
+                    }
                 }
                 
                 if (audioContext.state === 'suspended') {
@@ -1112,6 +1433,8 @@
                 activeTouchMap.clear();
                 audioContext.suspend();
                 updateStatus(false);
+                scopeLastFrequency = null;
+                updateScopeInfoDisplay();
             }
         }
 
@@ -1136,6 +1459,7 @@
                 status.textContent = 'Power Rail: Standby';
             }
             updatePowerUI(active);
+            updateScopeInfoDisplay();
         }
 
         function updateReverbMix() {
@@ -1253,6 +1577,9 @@
             const normalizedVelocity = Math.max(0, Math.min(1, velocity));
             const peakGain = VOICE_MAX_GAIN * (normalizedVelocity > 0 ? normalizedVelocity : 1);
 
+            scopeLastFrequency = frequency;
+            updateScopeInfoDisplay();
+
             const osc1 = audioContext.createOscillator();
             const osc2 = audioContext.createOscillator();
             const osc2Gain = audioContext.createGain();
@@ -1274,6 +1601,10 @@
 
             transientGain.gain.setValueAtTime(1, now);
             applyTransientEnvelope(transientGain, now);
+
+            if (scopeTapGain) {
+                transientGain.connect(scopeTapGain);
+            }
 
             driveWaveShaper.oversample = '4x';
             driveWaveShaper.curve = ensureDriveCurve();
@@ -1314,7 +1645,20 @@
             osc1.start();
             osc2.start();
 
-            const voice = { osc1, osc2, osc2Gain, transientGain, drivePreGain, driveWaveShaper, toneFilter, gainNode, filter, uiKey };
+            const voice = {
+                osc1,
+                osc2,
+                osc2Gain,
+                transientGain,
+                drivePreGain,
+                driveWaveShaper,
+                toneFilter,
+                gainNode,
+                filter,
+                uiKey,
+                currentFrequency: frequency
+            };
+            setupVoicePhaseMod(voice);
             applyDriveSettingsToVoice(voice, driveLinearGain, synthParams.toneTilt, now);
             activeOscillators[key] = voice;
             rebuildVoiceLFO(voice);
@@ -1347,12 +1691,19 @@
                     }
                 });
 
+                teardownPhaseMod(voice);
+
                 teardownVoiceLFO(voice);
                 delete activeOscillators[key];
 
                 const keyElement = document.querySelector(`[data-key="${voice.uiKey || key}"]`);
                 if (keyElement) {
                     keyElement.classList.remove('active');
+                }
+
+                if (Object.keys(activeOscillators).length === 0) {
+                    scopeLastFrequency = null;
+                    updateScopeInfoDisplay();
                 }
             }
         }
@@ -1372,6 +1723,7 @@
             const driveAmountValue = document.getElementById('driveAmountValue');
             const foldAmountValue = document.getElementById('foldAmountValue');
             const toneTiltValue = document.getElementById('toneTiltValue');
+            const phaseModDepthValue = document.getElementById('phaseModDepthValue');
 
             if (osc2DetuneSlider && osc2DetuneValue) {
                 osc2DetuneSlider.value = centsToDetuneSlider(synthParams.osc2Detune);
@@ -1413,6 +1765,9 @@
             if (toneTiltValue) {
                 toneTiltValue.textContent = synthParams.toneTilt.toFixed(1) + ' dB';
             }
+            if (phaseModDepthValue) {
+                phaseModDepthValue.textContent = Math.round(synthParams.phaseModDepth) + '%';
+            }
 
             const envAttackSlider = document.getElementById('envAttack');
             if (envAttackSlider) {
@@ -1449,6 +1804,18 @@
             const toneTiltSlider = document.getElementById('toneTilt');
             if (toneTiltSlider) {
                 toneTiltSlider.value = synthParams.toneTilt;
+            }
+            const phaseModDepthSlider = document.getElementById('phaseModDepth');
+            if (phaseModDepthSlider) {
+                phaseModDepthSlider.value = synthParams.phaseModDepth;
+            }
+            const phaseModShapeSelect = document.getElementById('phaseModShape');
+            if (phaseModShapeSelect) {
+                phaseModShapeSelect.value = synthParams.phaseModShape;
+            }
+            const phaseModRatioSelect = document.getElementById('phaseModRatio');
+            if (phaseModRatioSelect) {
+                phaseModRatioSelect.value = String(synthParams.phaseModRatio);
             }
 
             document.querySelectorAll('.wave-btn').forEach(btn => {
@@ -1640,6 +2007,30 @@
                 });
             }
 
+            if (phaseModDepthSlider) {
+                phaseModDepthSlider.addEventListener('input', (e) => {
+                    synthParams.phaseModDepth = parseFloat(e.target.value);
+                    if (phaseModDepthValue) {
+                        phaseModDepthValue.textContent = Math.round(synthParams.phaseModDepth) + '%';
+                    }
+                    updatePhaseModSettings();
+                });
+            }
+
+            if (phaseModShapeSelect) {
+                phaseModShapeSelect.addEventListener('change', (e) => {
+                    synthParams.phaseModShape = e.target.value;
+                    updatePhaseModSettings();
+                });
+            }
+
+            if (phaseModRatioSelect) {
+                phaseModRatioSelect.addEventListener('change', (e) => {
+                    synthParams.phaseModRatio = parseFloat(e.target.value);
+                    updatePhaseModSettings();
+                });
+            }
+
             document.getElementById('filterType').addEventListener('change', (e) => {
                 synthParams.filterType = e.target.value;
                 Object.values(activeOscillators).forEach(voice => {
@@ -1694,6 +2085,7 @@
             });
 
             updateDriveModuleSettings();
+            updatePhaseModSettings();
         }
 
         async function handleKeyDown(e) {
