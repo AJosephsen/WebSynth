@@ -1,5 +1,8 @@
 import { Operator } from "./dsp/operator";
-import { factoryPatches, LibraryPatch } from "./fm6/library";
+import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
+import { PolySynth } from "./synth/poly";
+import { Engine } from "./seq/engine";
+import { demos, engineForDemo } from "./seq/demos";
 export { loadSysex } from "./fm6/library";
 import { Fm6Voice } from "./fm6/note";
 import { render as fm6Render, Op } from "./fm6/core";
@@ -108,4 +111,47 @@ export const snippets: Snippet[] = [
     title: `Patch library · ${lp.name}`,
     render: () => patchNote(lp, 1.5, 3.5),
   })),
+  {
+    step: "Step 4",
+    title: "Polyphony · TINE EP, Cmaj9 rolled, overlapping notes",
+    render: () => {
+      const e = new Engine(SAMPLE_RATE, new PolySynth(byName("TINE EP").patch, 8));
+      const out = new Float32Array(SAMPLE_RATE * 5);
+      const notes = [48, 55, 59, 64, 71];
+      const at = (i: number) => Math.floor(SAMPLE_RATE * 0.12 * i);
+      let pos = 0;
+      for (let i = 0; i < notes.length; i++) {
+        render(e, out, pos, at(i) - pos);
+        pos = at(i);
+        e.live.noteOn(notes[i], 90);
+      }
+      render(e, out, pos, SAMPLE_RATE * 3 - pos);
+      pos = SAMPLE_RATE * 3;
+      e.live.allOff();
+      render(e, out, pos, out.length - pos);
+      return fade(out);
+    },
+  },
+  ...demos.map((d, i): Snippet => ({
+    step: "Step 5",
+    title: `Sequence · ${d.name} (${d.bpm} BPM, ${d.tracks.map((t) => t.patch).join(" + ")})`,
+    render: () => {
+      const e = engineForDemo(SAMPLE_RATE, d);
+      e.play();
+      const out = new Float32Array(Math.floor(((SAMPLE_RATE * 60) / d.bpm) * 8 + SAMPLE_RATE)); // two bars + tail
+      render(e, out, 0, Math.floor(((SAMPLE_RATE * 60) / d.bpm) * 8));
+      e.stop();
+      render(e, out, Math.floor(((SAMPLE_RATE * 60) / d.bpm) * 8), out.length - Math.floor(((SAMPLE_RATE * 60) / d.bpm) * 8));
+      void i;
+      return fade(out);
+    },
+  })),
 ];
+
+/** Renders into out[pos .. pos+n) in worklet-sized chunks. */
+function render(e: Engine, out: Float32Array, pos: number, n: number): void {
+  for (let i = 0; i < n; i += 128) {
+    const chunk = out.subarray(pos + i, pos + Math.min(n, i + 128));
+    e.render(chunk);
+  }
+}

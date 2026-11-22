@@ -80,3 +80,42 @@ export function parseSysex(data: Uint8Array): Uint8Array[] {
   }
   return voices;
 }
+
+/** 155-byte voice -> 128-byte packed record (as in a 32-voice bank). */
+export function pack(v: ArrayLike<number>): Uint8Array {
+  const b = new Uint8Array(128);
+  for (let k = 0; k < 6; k++) {
+    const o = k * FP.OP;
+    const d = k * 17;
+    for (let i = 0; i < 11; i++) b[d + i] = v[o + i] & 0x7f;
+    b[d + 11] = (v[o + FP.LC] & 3) | ((v[o + FP.RC] & 3) << 2);
+    b[d + 12] = (v[o + FP.RS] & 7) | ((v[o + FP.DET] & 15) << 3);
+    b[d + 13] = (v[o + FP.AMS] & 3) | ((v[o + FP.KVS] & 7) << 2);
+    b[d + 14] = v[o + FP.OL] & 0x7f;
+    b[d + 15] = (v[o + FP.MODE] & 1) | ((v[o + FP.FC] & 31) << 1);
+    b[d + 16] = v[o + FP.FF] & 0x7f;
+  }
+  for (let i = 0; i < 9; i++) b[102 + i] = v[FP.PR1 + i] & 0x7f;
+  b[110] &= 31;
+  b[111] = (v[FP.FB] & 7) | ((v[FP.OKS] & 1) << 3);
+  for (let i = 0; i < 4; i++) b[112 + i] = v[FP.LFS + i] & 0x7f;
+  b[116] = (v[FP.LKS] & 1) | ((v[FP.LFW] & 7) << 1) | ((v[FP.LPMS] & 7) << 4);
+  b[117] = v[FP.TRNSP] & 0x7f;
+  for (let i = 0; i < 10; i++) b[118 + i] = v[FP.NAME + i] & 0x7f;
+  return b;
+}
+
+/** Up to 32 voices as a DX7 32-voice bank SysEx message (missing slots are INIT-like blanks). */
+export function buildBankSysex(voices: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(6 + 4096 + 2);
+  out.set([0xf0, 0x43, 0x00, 0x09, 0x20, 0x00]);
+  let sum = 0;
+  for (let k = 0; k < 32; k++) {
+    const rec = k < voices.length ? pack(voices[k]) : new Uint8Array(128);
+    out.set(rec, 6 + k * 128);
+    for (const x of rec) sum += x;
+  }
+  out[6 + 4096] = -sum & 0x7f;
+  out[6 + 4097] = 0xf7;
+  return out;
+}

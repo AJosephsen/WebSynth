@@ -78,4 +78,36 @@ pats.forEach((arr, pi) => {
   if (line !== gold2[pi]) { bad2++; console.log(`NOTE MISMATCH\n gold ${gold2[pi]}\n  got ${line}`); }
 });
 console.log(bad2 ? `NOTE FAIL ${bad2}` : "OK note layer + patch unpack match");
-process.exit(bad2 ? 1 : 0);
+
+// ---- patch formats, polyphony, sequencer ----
+import { buildBankSysex, pack, parseSysex } from "../src/fm6/patch";
+import { PolySynth } from "../src/synth/poly";
+import { Engine } from "../src/seq/engine";
+import { byName } from "../src/fm6/library";
+
+let bad3 = 0;
+const check = (ok: boolean, what: string) => { if (!ok) { bad3++; console.log("FAIL", what); } };
+// pack/unpack round trip and SysEx bank round trip
+check(factoryPatches.every((lp) => unpack(pack(lp.patch)).every((x, i) => x === lp.patch[i])), "pack/unpack round trip");
+const bank = buildBankSysex(factoryPatches.map((p) => p.patch));
+const back = parseSysex(bank);
+check(back.length === 32 && back[3].every((x, i) => x === factoryPatches[3].patch[i]), "sysex bank round trip");
+check(bank[bank.length - 1] === 0xf7 && (bank.slice(6, 6 + 4096).reduce((a, b) => a + b, 0) + bank[6 + 4096]) % 128 === 0, "sysex checksum");
+// polyphony: more notes than voices must steal, never exceed the voice count, never produce NaN
+const poly = new PolySynth(byName("TINE EP").patch, 4);
+for (let i = 0; i < 9; i++) poly.noteOn(48 + i * 3);
+check(poly.activeVoices === 4, "voice stealing keeps 4 voices");
+const buf = new Float32Array(2048);
+poly.render(buf, 0, buf.length);
+check(buf.every(Number.isFinite) && buf.some((x) => x !== 0), "poly output finite and non-silent");
+// sequencer: 120 BPM, 44.1 kHz -> a 16th is 5513 frames (5512.5 rounded)
+const eng = new Engine(44100, new PolySynth(byName("INIT").patch, 2));
+eng.addTrack(new PolySynth(byName("PLUCK").patch, 2), [{ notes: [60] }, null, null, null]);
+eng.play();
+const chunk = new Float32Array(128);
+for (let i = 0; i < Math.ceil(88200 / 128); i++) eng.render(chunk);
+check(eng.stepIndex === 17, `sequencer step count after 2 s (got ${eng.stepIndex})`);
+eng.stop();
+check(eng.tracks[0].synth.activeVoices >= 0, "stop ok");
+console.log(bad3 ? `FAIL ${bad3}` : "OK formats, polyphony, sequencer");
+process.exit(bad2 + bad3 ? 1 : 0);
