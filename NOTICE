@@ -8,3 +8,7 @@ Hügelton Instruments), which is itself an integer C port of msfa, the 6-operato
 Its lookup tables follow Felucca's tools/gen_tables.py and Felucca-Engines (MIT).
 
 tests/fm6-gold.txt holds reference output produced by Felucca's fm6_core.c.
+
+src/fm6/bank.ts: the WebSynth factory voices are original works of this project (GPL-3.0-only). They are written as
+readable operator settings and were not copied from any instrument ROM.
+src/fm6/factory.ts: the INIT voice and Felucca's 8 factory voices (GPL-3.0-only, Leo Kuroshita / Hügelton Instruments).

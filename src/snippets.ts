@@ -107,8 +107,8 @@ export const snippets: Snippet[] = [
     render: () => fm6Note(32, [1, 2, 3, 4, 6, 8].map((r, i) => ({ ratio: r, level: -1 - i * 0.6, decay: 0.3 })), 130.81, 2.5, 4),
   },
   ...factoryPatches.map((lp): Snippet => ({
-    step: "Step 3c",
-    title: `Patch library · ${lp.name}`,
+    step: "Patch library",
+    title: `${lp.bank} · ${lp.name}`,
     render: () => patchNote(lp, 1.5, 3.5),
   })),
   {

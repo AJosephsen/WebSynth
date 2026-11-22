@@ -13,7 +13,7 @@ app.innerHTML = `
     <p>Play with the keys A W S E D F T G Y H U J K (C4 upward), Z and X shift the octave, or use a MIDI keyboard.</p>
   </section>
   <section><h2>Patch library</h2>
-    <select id="patch" size="8" disabled></select>
+    <select id="patch" size="12" disabled></select>
     <div>
       <label>Import DX7 .syx <input id="syx" type="file" accept=".syx"></label>
       <button id="export">Export bank (.syx)</button>
@@ -52,7 +52,10 @@ let current = library[1];
 let node: AudioWorkletNode | undefined;
 
 function fillSelect(): void {
-  select.innerHTML = library.map((p, i) => `<option value="${i}">${p.source === "user" ? "★ " : ""}${p.name}</option>`).join("");
+  const banks = [...new Set(library.map((p) => p.bank))];
+  select.innerHTML = banks
+    .map((b) => `<optgroup label="${b}">${library.map((p, i) => (p.bank === b ? `<option value="${i}">${p.name}</option>` : "")).join("")}</optgroup>`)
+    .join("");
   select.value = String(library.indexOf(current));
 }
 function choose(p: LibraryPatch): void {

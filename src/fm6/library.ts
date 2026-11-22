@@ -1,5 +1,6 @@
 // Patch library: Felucca's factory voices, DX7 SysEx import/export and user patches kept in the browser.
 // See NOTICE.
+import { bankVoices } from "./bank";
 import { FACTORY } from "./factory";
 import { buildBankSysex, parseSysex, patchName, unpack } from "./patch";
 
@@ -8,15 +9,20 @@ export interface LibraryPatch {
   patch: Uint8Array; // 155-byte voice
   note: number; // a sensible MIDI note to audition it on
   source: "factory" | "user";
+  bank: string; // the group it is listed under
 }
 
-const AUDITION: Record<string, number> = { "FM BASS": 36, BASS: 36 };
+const AUDITION: Record<string, number> = { "FM BASS": 36, "SLAP BASS": 36, "SYN BASS": 36, "SUB BASS": 36, "PIPE ORG": 48, GLOCK: 72 };
 
-export function toLibraryPatch(patch: Uint8Array, source: "factory" | "user", name = patchName(patch)): LibraryPatch {
-  return { name, patch, note: AUDITION[name] ?? 60, source };
+export function toLibraryPatch(patch: Uint8Array, source: "factory" | "user", name = patchName(patch), bank = source === "user" ? "User" : "Factory"): LibraryPatch {
+  return { name, patch, note: AUDITION[name] ?? 60, source, bank };
 }
 
-export const factoryPatches: LibraryPatch[] = FACTORY.map((f) => toLibraryPatch(unpack(f.packed), "factory", f.name));
+// INIT, Felucca's 8 voices, then WebSynth's own bank
+export const factoryPatches: LibraryPatch[] = [
+  ...FACTORY.map((f) => toLibraryPatch(unpack(f.packed), "factory", f.name, f.name === "INIT" ? "Init" : "Felucca")),
+  ...bankVoices.map((v) => toLibraryPatch(v, "factory", patchName(v), "WebSynth")),
+];
 
 export function byName(name: string): LibraryPatch {
   const p = factoryPatches.find((x) => x.name === name);
