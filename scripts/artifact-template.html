@@ -15,11 +15,14 @@ h2{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color
 .row small{grid-column:2;color:var(--muted);font-family:var(--mono);font-size:12px}
 button{font:600 14px var(--font);background:var(--accent);color:var(--bg);border:0;border-radius:6px;width:44px;height:44px;cursor:pointer}
 button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+input[type=file]{margin:4px 0 12px;font:13px var(--mono);color:var(--fg)}
+.row small{grid-column:2}
 canvas{grid-column:1/-1;width:100%;height:56px;display:block}
 </style>
 <main>
 <h1>WebSynth Snippets</h1>
 <p class="sub">Audio from each build step, rendered in the page by the same operator code as the project. Newest step first.</p>
+<section class="lib"><h2>Your DX7 patches</h2><p class="sub" style="margin:0 0 8px">Load a DX7 .syx bank (32 voices) or single voice. Each voice gets a play button below.</p><input id="syx" type="file" accept=".syx"><div id="user"></div></section>
 <div id="log"></div>
 </main>
 <script>
@@ -38,6 +41,13 @@ function draw(c,a){const dpr=devicePixelRatio||1,w=c.clientWidth,h=56;c.width=w*
  for(let x=0;x<w;x++){let mn=1,mx=-1;for(let k=0;k<step;k++){const v=a[x*step+k]||0;mn=Math.min(mn,v);mx=Math.max(mx,v)}
   g.moveTo(x,h/2-mx*h*.9);g.lineTo(x,h/2-mn*h*.9)}g.stroke()}
 const log=document.getElementById('log'),draws=[];
+document.getElementById('syx').onchange=async e=>{const f=e.target.files[0];if(!f)return;
+ const vs=WS.loadSysex(new Uint8Array(await f.arrayBuffer()));const box=document.getElementById('user');box.innerHTML='';
+ if(!vs.length){box.textContent='No DX7 voices found in that file.';return}
+ vs.forEach(lp=>{const row=document.createElement('div');row.className='row';row.innerHTML='<button aria-label="Play"></button><b></b><small></small>';
+  row.querySelector('b').textContent=lp.name;row.querySelector('small').textContent='MIDI note '+lp.note;
+  row.querySelector('button').textContent='\u25B6';
+  row.querySelector('button').onclick=()=>play(WS.patchNote(lp,1.5,3.5));box.append(row)})};
 for(const g of groups){const h=document.createElement('h2');h.textContent=g.step;log.append(h);
  for(const it of g.items){const a=it.render(),r=document.createElement('div');r.className='row';
   r.innerHTML='<button aria-label="Play"></button><b></b><small>'+(a.length/SR).toFixed(1)+' s</small><canvas></canvas>';

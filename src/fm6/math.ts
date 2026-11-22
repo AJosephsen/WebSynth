@@ -2,7 +2,7 @@
 import { EXP2, FREQ_R, SINE } from "./tables";
 
 /** Q30 mantissa 2^(frac) of a Q24 log2 value. */
-function mant(x: number): number {
+export function mant(x: number): number {
   const f = x & 0xffffff;
   const k = f >> 14;
   const a = EXP2[k];

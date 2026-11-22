@@ -1,6 +1,7 @@
 import { Operator } from "./dsp/operator";
-import { patches } from "./dsp/patches";
-import { Voice } from "./dsp/voice";
+import { factoryPatches, LibraryPatch } from "./fm6/library";
+export { loadSysex } from "./fm6/library";
+import { Fm6Voice } from "./fm6/note";
 import { render as fm6Render, Op } from "./fm6/core";
 import { freq as fm6Freq } from "./fm6/math";
 import { CTL } from "./fm6/tables";
@@ -30,21 +31,16 @@ function sine(freq: number, seconds: number): Float32Array {
   return fade(out);
 }
 
-/** Render one held note through a patch. */
-function note(patch: string, freq: number, hold: number, total: number): Float32Array {
-  const v = new Voice(SAMPLE_RATE, patches[patch]);
+/** Render one note through a library patch. */
+export function patchNote(lp: LibraryPatch, hold: number, total: number): Float32Array {
+  const v = new Fm6Voice(lp.patch);
   const out = new Float32Array(Math.floor(SAMPLE_RATE * total));
-  v.noteOn(freq);
+  v.noteOn(lp.note, 100);
   for (let i = 0; i < out.length; i++) {
     if (i === Math.floor(SAMPLE_RATE * hold)) v.noteOff();
-    out[i] = v.next() * 0.5;
+    out[i] = v.next();
   }
   return fade(out);
-}
-
-function chord(): Float32Array {
-  const parts = [130.81, 164.81, 196].map((f) => note("organ", f, 1.5, 2));
-  return parts[0].map((_, i) => (parts[0][i] + parts[1][i] + parts[2][i]) / 3);
 }
 
 interface Fm6Op {
@@ -84,9 +80,6 @@ function fm6Note(algorithm: number, ops: Fm6Op[], hz: number, seconds: number, f
 export const snippets: Snippet[] = [
   { step: "Step 2", title: "Operator: A4 sine (440 Hz)", render: () => sine(440, 1.5) },
   { step: "Step 2", title: "Operator: A2 sine (110 Hz)", render: () => sine(110, 1.5) },
-  { step: "Step 3a", title: "Algorithm 5 · E-Piano, C4", render: () => note("epiano", 261.63, 1.5, 3) },
-  { step: "Step 3a", title: "Algorithm 1 · FM Bass, C2", render: () => note("bass", 65.41, 1.0, 1.6) },
-  { step: "Step 3a", title: "Algorithm 32 · Organ chord, C3 E3 G3", render: () => chord() },
   {
     step: "Step 3b",
     title: "msfa port · Algorithm 5, bell pair 1:14, C4",
@@ -110,4 +103,9 @@ export const snippets: Snippet[] = [
     title: "msfa port · Algorithm 32 additive, C3",
     render: () => fm6Note(32, [1, 2, 3, 4, 6, 8].map((r, i) => ({ ratio: r, level: -1 - i * 0.6, decay: 0.3 })), 130.81, 2.5, 4),
   },
+  ...factoryPatches.map((lp): Snippet => ({
+    step: "Step 3c",
+    title: `Patch library · ${lp.name}`,
+    render: () => patchNote(lp, 1.5, 3.5),
+  })),
 ];
