@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "esbuild scripts/test-fm6.ts --bundle --platform=node --format=cjs --outfile=dist-test/t.cjs --log-level=error && node dist-test/t.cjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
