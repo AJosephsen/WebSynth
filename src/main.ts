@@ -7,7 +7,7 @@ app.innerHTML = `
   <h1>WebSynth</h1>
   <section><h2>Live</h2>
     <button id="start">Start audio</button>
-    <button id="note" disabled>Hold to play A4</button>
+    <button id="note" disabled>Hold to play C4</button>
   </section>
   <section><h2>Snippets</h2><div id="snips"></div></section>`;
 
@@ -33,5 +33,5 @@ startBtn.onclick = async () => {
   startBtn.disabled = true;
   noteBtn.disabled = false;
 };
-noteBtn.onpointerdown = () => node?.port.postMessage({ type: "noteOn", freq: 440 });
+noteBtn.onpointerdown = () => node?.port.postMessage({ type: "noteOn", freq: 261.63 });
 noteBtn.onpointerup = noteBtn.onpointerleave = () => node?.port.postMessage({ type: "noteOff" });

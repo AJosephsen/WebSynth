@@ -1,0 +1,48 @@
+<title>WebSynth Snippets</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one column log of build steps, newest first; each snippet is a row with play button and waveform. */
+:root{--bg:#f3f4f2;--fg:#16201c;--muted:#5d6a64;--line:#d3d9d5;--panel:#fff;--accent:#0b7a5a;--wave:#0b7a5a;--font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1512;--fg:#e4ece7;--muted:#8d9b94;--line:#26322c;--panel:#161e1a;--accent:#3ed6a0;--wave:#3ed6a0;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1512;--fg:#e4ece7;--muted:#8d9b94;--line:#26322c;--panel:#161e1a;--accent:#3ed6a0;--wave:#3ed6a0;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--font);padding-block:32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:760px;margin:0 auto}
+h1{font:600 28px/1.2 var(--font);margin:0 0 4px}
+p.sub{color:var(--muted);margin:0 0 28px}
+h2{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:28px 0 10px}
+.row{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.row b{font-weight:600}
+.row small{grid-column:2;color:var(--muted);font-family:var(--mono);font-size:12px}
+button{font:600 14px var(--font);background:var(--accent);color:var(--bg);border:0;border-radius:6px;width:44px;height:44px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+canvas{grid-column:1/-1;width:100%;height:56px;display:block}
+</style>
+<main>
+<h1>WebSynth Snippets</h1>
+<p class="sub">Audio from each build step, rendered in the page by the same operator code as the project. Newest step first.</p>
+<div id="log"></div>
+</main>
+<script>
+/*BUNDLE*/
+</script>
+<script>
+const SR=WS.SAMPLE_RATE;
+const groups=[];
+for(const s of WS.snippets){let g=groups.find(x=>x.step===s.step);if(!g)groups.push(g={step:s.step,items:[]});g.items.push(s)}
+groups.reverse();
+let ctx;
+function play(a){ctx=ctx||new AudioContext();const b=ctx.createBuffer(1,a.length,SR);b.copyToChannel(a,0);const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start()}
+function draw(c,a){const dpr=devicePixelRatio||1,w=c.clientWidth,h=56;c.width=w*dpr;c.height=h*dpr;const g=c.getContext('2d');g.scale(dpr,dpr);
+ g.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--wave');g.lineWidth=1.5;g.beginPath();
+ const n=Math.min(a.length,Math.floor(w));const step=Math.max(1,Math.floor(a.length/w));
+ for(let x=0;x<w;x++){let mn=1,mx=-1;for(let k=0;k<step;k++){const v=a[x*step+k]||0;mn=Math.min(mn,v);mx=Math.max(mx,v)}
+  g.moveTo(x,h/2-mx*h*.9);g.lineTo(x,h/2-mn*h*.9)}g.stroke()}
+const log=document.getElementById('log'),draws=[];
+for(const g of groups){const h=document.createElement('h2');h.textContent=g.step;log.append(h);
+ for(const it of g.items){const a=it.render(),r=document.createElement('div');r.className='row';
+  r.innerHTML='<button aria-label="Play"></button><b></b><small>'+(a.length/SR).toFixed(1)+' s</small><canvas></canvas>';
+  r.querySelector('b').textContent=it.title;r.querySelector('button').textContent='\u25B6';
+  r.querySelector('button').onclick=()=>play(a);log.append(r);draws.push(()=>draw(r.querySelector('canvas'),a))}}
+const redraw=()=>draws.forEach(d=>d());redraw();addEventListener('resize',redraw);
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',redraw);
+</script>
