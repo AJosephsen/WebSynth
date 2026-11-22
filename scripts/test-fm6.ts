@@ -102,13 +102,38 @@ const buf = new Float32Array(2048);
 poly.render(buf, 0, buf.length);
 check(buf.every(Number.isFinite) && buf.some((x) => x !== 0), "poly output finite and non-silent");
 // sequencer: 120 BPM, 44.1 kHz -> a 16th is 5513 frames (5512.5 rounded)
-const eng = new Engine(44100, new PolySynth(byName("INIT").patch, 2));
-eng.addTrack(new PolySynth(byName("PLUCK").patch, 2), [{ notes: [60] }, null, null, null]);
+import { createEngine } from "../src/seq/engine";
+import { defaultSong, emptyPattern, patchFor, sanitizeSong, Song } from "../src/seq/song";
+const mini: Song = {
+  bpm: 120, swing: 0,
+  tracks: [{ patch: "PLUCK", mute: false }, { patch: "INIT", mute: true }, { patch: "INIT", mute: true }, { patch: "INIT", mute: true }],
+  patterns: [emptyPattern("A", 4), emptyPattern("B", 8)],
+  arrangement: [0, 1, 0],
+};
+mini.patterns[0].steps[0][0] = { notes: [60] };
+mini.patterns[1].steps[0][3] = { notes: [64], vel: 80, gate: 2 };
+const eng = createEngine(44100, mini, patchFor);
+const seen: string[] = [];
+eng.onStep = (p, st, ap) => seen.push(`${p}.${st}@${ap}`);
 eng.play();
 const chunk = new Float32Array(128);
 for (let i = 0; i < Math.ceil(88200 / 128); i++) eng.render(chunk);
 check(eng.stepIndex === 17, `sequencer step count after 2 s (got ${eng.stepIndex})`);
+// arrangement 0(4) 1(8) 0(4) then wraps: steps 0-3 are pattern 0, 4-11 pattern 1, 12-15 pattern 0, 16 wraps to pattern 0
+check(seen.slice(0, 5).join() === "0.0@0,0.1@0,0.2@0,0.3@0,1.0@1", `song order (got ${seen.slice(0, 5)})`);
+check(seen[12] === "0.0@2" && seen[16] === "0.0@0", `arrangement loop (got ${seen[12]}, ${seen[16]})`);
+// pattern mode loops one pattern
+const eng2 = createEngine(44100, mini, patchFor);
+eng2.mode = "pattern"; eng2.patternIndex = 1;
+const seen2: string[] = [];
+eng2.onStep = (p, st) => seen2.push(`${p}.${st}`);
+eng2.play();
+for (let i = 0; i < Math.ceil(5513 * 10 / 128); i++) eng2.render(chunk);
+check(seen2.slice(6, 10).join() === "1.6,1.7,1.0,1.1", `pattern loop (got ${seen2.slice(6, 10)})`);
+// live song replacement keeps playing, and a corrupt song is rejected
+eng.setSong(defaultSong());
+for (let i = 0; i < 20; i++) eng.render(chunk);
+check(sanitizeSong({}) === null && sanitizeSong(JSON.parse(JSON.stringify(defaultSong())))?.patterns.length === 4, "song sanitize");
 eng.stop();
-check(eng.tracks[0].synth.activeVoices >= 0, "stop ok");
 console.log(bad3 ? `FAIL ${bad3}` : "OK formats, polyphony, sequencer");
 process.exit(bad2 + bad3 ? 1 : 0);

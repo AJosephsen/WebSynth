@@ -1,7 +1,7 @@
 import workletUrl from "./worklet/processor.ts?worker&url";
 import { encodeWav } from "./wav";
 import { SAMPLE_RATE, snippets } from "./snippets";
-import { demos } from "./seq/demos";
+import { mountSequencer } from "./ui/sequencer";
 import { exportBank, factoryPatches, LibraryPatch, loadSysex, loadUserPatches, saveUserPatches } from "./fm6/library";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -20,20 +20,13 @@ app.innerHTML = `
       <button id="delete">Delete user patch</button>
     </div>
   </section>
-  <section><h2>Sequencer</h2>
-    <select id="demo"></select>
-    <label>BPM <input id="bpm" type="number" min="40" max="240" value="104"></label>
-    <button id="play" disabled>Play</button>
-  </section>
+  <section><h2>Sequencer</h2><div id="seq"></div></section>
   <section><h2>Snippets</h2><div id="snips"></div></section>`;
 
 const $ = <T extends HTMLElement>(id: string) => app.querySelector<T>("#" + id)!;
 const startBtn = $<HTMLButtonElement>("start");
 const select = $<HTMLSelectElement>("patch");
 const syx = $<HTMLInputElement>("syx");
-const demoSel = $<HTMLSelectElement>("demo");
-const bpm = $<HTMLInputElement>("bpm");
-const playBtn = $<HTMLButtonElement>("play");
 const status = $("status");
 
 // ---- snippets ----
@@ -72,6 +65,7 @@ syx.onchange = async () => {
   library = [...library, ...voices];
   saveUserPatches(library);
   fillSelect();
+  seq.refreshLibrary();
   status.textContent = `Imported ${voices.length} voice${voices.length > 1 ? "s" : ""}.`;
 };
 $<HTMLButtonElement>("export").onclick = () => {
@@ -87,23 +81,12 @@ $<HTMLButtonElement>("delete").onclick = () => {
   current = library[1];
   saveUserPatches(library);
   fillSelect();
+  seq.refreshLibrary();
   choose(current);
 };
 
 // ---- sequencer ----
-demoSel.innerHTML = demos.map((d, i) => `<option value="${i}">${d.name}</option>`).join("");
-let playing = false;
-demoSel.onchange = () => {
-  node?.port.postMessage({ type: "demo", index: Number(demoSel.value) });
-  bpm.value = String(demos[Number(demoSel.value)].bpm);
-  if (playing) node?.port.postMessage({ type: "play" });
-};
-bpm.onchange = () => node?.port.postMessage({ type: "bpm", bpm: Number(bpm.value) });
-playBtn.onclick = () => {
-  playing = !playing;
-  node?.port.postMessage({ type: playing ? "play" : "stop" });
-  playBtn.textContent = playing ? "Stop" : "Play";
-};
+const seq = mountSequencer($("seq"), { library: () => library, send: (m) => node?.port.postMessage(m) });
 
 // ---- live input ----
 const KEYS = "awsedftgyhujk";
@@ -155,10 +138,10 @@ startBtn.onclick = async () => {
   node = new AudioWorkletNode(ctx, "synth");
   node.connect(ctx.destination);
   choose(current);
-  node.port.postMessage({ type: "demo", index: Number(demoSel.value) });
-  startBtn.disabled = false;
+  node.port.onmessage = (e) => seq.onMessage(e.data);
+  seq.sync();
   startBtn.disabled = true;
   select.disabled = false;
-  playBtn.disabled = false;
+  $<HTMLButtonElement>("sq-play").disabled = false;
   void connectMidi();
 };

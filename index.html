@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WebSynth</title>
+    <style>
+      :root { color-scheme: light dark; --bg:#f3f4f2; --fg:#16201c; --line:#c9d0cc; --accent:#0b7a5a; --panel:#fff; --cell:#e7ebe8; --blk:#dde2df; }
+      @media (prefers-color-scheme: dark) { :root { --bg:#0f1512; --fg:#e4ece7; --line:#2b3831; --accent:#3ed6a0; --panel:#161e1a; --cell:#1b2520; --blk:#141c18; } }
+      body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 16px; }
+      h1, h2, h3 { margin: 12px 0 6px; } section { margin-bottom: 24px; }
+      button, select, input { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+      button { cursor: pointer; } button:disabled { opacity: .5; cursor: default; }
+      button.sel, .pbtn.sel, .chip.sel { outline: 2px solid var(--accent); } button.off { opacity: .6; }
+      .seq-bar, .seq-tracks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+      .trk { display: flex; gap: 6px; align-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 6px; } .trk.sel { border-color: var(--accent); }
+      .chip.now { background: var(--accent); color: var(--bg); }
+      .roll-wrap { overflow-x: auto; }
+      .rl { display: grid; grid-template-columns: 34px repeat(var(--cols), minmax(22px, 1fr)); gap: 1px; min-width: calc(34px + var(--cols) * 24px); }
+      .rl .lab { font-size: 10px; text-align: right; padding-right: 4px; opacity: .7; } .rl .lab.small { align-self: center; }
+      .c { height: 14px; background: var(--cell); cursor: pointer; } .c.blk { background: var(--blk); } .c.beat { box-shadow: inset 2px 0 0 var(--line); }
+      .c.on { background: var(--accent); } .c.play, .v.play, .g.play { outline: 1px solid var(--accent); filter: brightness(1.25); }
+      .v { height: 36px; background: var(--cell); position: relative; cursor: pointer; } .v i { position: absolute; bottom: 0; left: 2px; right: 2px; background: var(--accent); opacity: .7; }
+      .g { height: 18px; font-size: 10px; text-align: center; background: var(--cell); cursor: pointer; }
+    </style>
   </head>
   <body>
     <div id="app"></div>

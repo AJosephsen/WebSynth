@@ -1,48 +1,74 @@
 import { PolySynth } from "../synth/poly";
-
-/** One step: a note or chord, with velocity and gate length (in steps). null = rest. */
-export type Step = { notes: number[]; vel?: number; gate?: number } | null;
-
-export interface Track {
-  synth: PolySynth;
-  steps: Step[];
-  mute: boolean;
-}
+import { MAX_STEPS, Pattern, Song, Step, TRACKS } from "./song";
 
 interface PendingOff {
   frames: number;
-  track: Track;
+  synth: PolySynth;
   notes: number[];
 }
 
+export interface EngineTrack {
+  synth: PolySynth;
+  mute: boolean;
+}
+
 /**
- * Sample-accurate step sequencer plus the synths it plays. Steps are 16th notes.
+ * Sample-accurate pattern/song sequencer plus the synths it plays. Steps are 16th notes.
+ * "pattern" mode loops one pattern; "song" mode follows the arrangement (the pattern sequencer).
  * The same code runs in the AudioWorklet and offline (for the snippets).
  */
 export class Engine {
-  tracks: Track[] = [];
+  tracks: EngineTrack[] = [];
   live: PolySynth;
-  bpm = 120;
-  swing = 0; // 0..0.5, delays every second step
+  song: Song;
+  mode: "pattern" | "song" = "song";
+  patternIndex = 0; // the pattern that loops in pattern mode
   master = 0.6; // pre-limiter gain; the output is soft-limited with tanh
   playing = false;
-  stepIndex = 0;
+  stepIndex = 0; // steps fired since play()
+  stepInPattern = 0;
+  arrPos = 0;
+  /** Called when a step fires (pattern index, step, arrangement position). */
+  onStep?: (pattern: number, step: number, arrPos: number) => void;
   private framesToStep = 0;
   private pending: PendingOff[] = [];
 
-  constructor(private readonly sampleRate: number, live: PolySynth) {
+  constructor(private readonly sampleRate: number, live: PolySynth, song: Song) {
     this.live = live;
+    this.song = song;
   }
 
-  addTrack(synth: PolySynth, steps: Step[] = []): Track {
-    const t: Track = { synth, steps, mute: false };
+  get bpm(): number { return this.song.bpm; }
+
+  addTrack(synth: PolySynth): EngineTrack {
+    const t = { synth, mute: false };
     this.tracks.push(t);
     return t;
+  }
+
+  /** Replaces the song while it plays; the position stays valid. */
+  setSong(song: Song): void {
+    this.song = song;
+    this.patternIndex = Math.min(this.patternIndex, song.patterns.length - 1);
+    this.arrPos = Math.min(this.arrPos, song.arrangement.length - 1);
+    const len = this.currentPattern().length;
+    if (this.stepInPattern >= len) this.stepInPattern = 0;
+    this.tracks.forEach((t, i) => (t.mute = !!song.tracks[i]?.mute));
+  }
+
+  private currentPatternIndex(): number {
+    return this.mode === "song" ? this.song.arrangement[this.arrPos] ?? 0 : this.patternIndex;
+  }
+
+  private currentPattern(): Pattern {
+    return this.song.patterns[this.currentPatternIndex()] ?? this.song.patterns[0];
   }
 
   play(): void {
     this.playing = true;
     this.stepIndex = 0;
+    this.stepInPattern = 0;
+    this.arrPos = 0;
     this.framesToStep = 0;
   }
 
@@ -53,21 +79,29 @@ export class Engine {
   }
 
   private stepFrames(index: number): number {
-    const base = (this.sampleRate * 60) / this.bpm / 4;
-    return Math.round(base * (index % 2 === 0 ? 1 + this.swing : 1 - this.swing));
+    const base = (this.sampleRate * 60) / this.song.bpm / 4;
+    return Math.round(base * (index % 2 === 0 ? 1 + this.song.swing : 1 - this.song.swing));
   }
 
   private fireStep(): void {
-    for (const t of this.tracks) {
-      if (t.mute || t.steps.length === 0) continue;
-      const st = t.steps[this.stepIndex % t.steps.length];
-      if (!st) continue;
+    const pat = this.currentPattern();
+    const pi = this.currentPatternIndex();
+    this.onStep?.(pi, this.stepInPattern, this.arrPos);
+    for (let ti = 0; ti < Math.min(TRACKS, this.tracks.length); ti++) {
+      const t = this.tracks[ti];
+      const st: Step = pat.steps[ti]?.[this.stepInPattern] ?? null;
+      if (t.mute || !st) continue;
       for (const n of st.notes) t.synth.noteOn(n, st.vel ?? 100);
       const frames = Math.max(1, Math.round(this.stepFrames(this.stepIndex) * (st.gate ?? 0.9)));
-      this.pending.push({ frames, track: t, notes: st.notes });
+      this.pending.push({ frames, synth: t.synth, notes: st.notes });
     }
     this.framesToStep = this.stepFrames(this.stepIndex);
     this.stepIndex++;
+    this.stepInPattern++;
+    if (this.stepInPattern >= Math.min(pat.length, MAX_STEPS)) {
+      this.stepInPattern = 0;
+      if (this.mode === "song") this.arrPos = (this.arrPos + 1) % this.song.arrangement.length;
+    }
   }
 
   /** Mixes `out.length` samples into out, which must start silent. */
@@ -84,9 +118,20 @@ export class Engine {
       pos += n;
       if (this.playing) this.framesToStep -= n;
       for (const p of this.pending) p.frames -= n;
-      for (const p of this.pending) if (p.frames <= 0) for (const note of p.notes) p.track.synth.noteOff(note);
+      for (const p of this.pending) if (p.frames <= 0) for (const note of p.notes) p.synth.noteOff(note);
       this.pending = this.pending.filter((p) => p.frames > 0);
     }
     for (let i = 0; i < out.length; i++) out[i] = Math.tanh(out[i] * this.master);
   }
+}
+
+/** Builds an engine for a song: one polyphonic synth per track. */
+export function createEngine(sampleRate: number, song: Song, patchFor: (name: string) => Uint8Array, voices = 6): Engine {
+  const e = new Engine(sampleRate, new PolySynth(patchFor("TINE EP"), 8), song);
+  song.tracks.forEach((t) => {
+    const s = new PolySynth(patchFor(t.patch), voices);
+    s.gain = 0.7;
+    e.addTrack(s).mute = t.mute;
+  });
+  return e;
 }

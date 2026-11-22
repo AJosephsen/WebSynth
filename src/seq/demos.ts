@@ -1,6 +1,5 @@
-import { byName } from "../fm6/library";
-import { PolySynth } from "../synth/poly";
-import { Engine, Step } from "./engine";
+import { Engine, createEngine } from "./engine";
+import { patchFor, patternFrom, Song, Step, TRACKS } from "./song";
 
 const n = (...notes: number[]): Step => ({ notes });
 const _ = null;
@@ -84,15 +83,20 @@ export const demos: Demo[] = [
   },
 ];
 
-/** Builds an engine that plays a demo (one polyphonic synth per track). */
-export function engineForDemo(sampleRate: number, demo: Demo, voices = 6): Engine {
-  const e = new Engine(sampleRate, new PolySynth(byName("TINE EP").patch, 8));
-  for (const t of demo.tracks) {
-    const s = new PolySynth(byName(t.patch).patch, voices);
-    s.gain = 0.7;
-    e.addTrack(s, t.steps);
-  }
-  e.bpm = demo.bpm;
-  e.swing = demo.swing;
-  return e;
+/** A demo as a one-pattern song (tracks beyond the fourth are dropped). */
+export function demoSong(d: Demo): Song {
+  const tracks = d.tracks.slice(0, TRACKS);
+  while (tracks.length < TRACKS) tracks.push({ patch: "INIT", steps: [] });
+  return {
+    bpm: d.bpm,
+    swing: d.swing,
+    tracks: tracks.map((t, i) => ({ patch: t.patch, mute: i >= d.tracks.length })),
+    patterns: [patternFrom(d.name, tracks.map((t) => t.steps))],
+    arrangement: [0],
+  };
+}
+
+/** Builds an engine that plays a demo. */
+export function engineForDemo(sampleRate: number, demo: Demo): Engine {
+  return createEngine(sampleRate, demoSong(demo), patchFor);
 }

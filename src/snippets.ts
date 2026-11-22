@@ -1,7 +1,8 @@
 import { Operator } from "./dsp/operator";
 import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
 import { PolySynth } from "./synth/poly";
-import { Engine } from "./seq/engine";
+import { createEngine, Engine } from "./seq/engine";
+import { defaultSong, patchFor } from "./seq/song";
 import { demos, engineForDemo } from "./seq/demos";
 export { loadSysex } from "./fm6/library";
 import { Fm6Voice } from "./fm6/note";
@@ -115,7 +116,7 @@ export const snippets: Snippet[] = [
     step: "Step 4",
     title: "Polyphony · TINE EP, Cmaj9 rolled, overlapping notes",
     render: () => {
-      const e = new Engine(SAMPLE_RATE, new PolySynth(byName("TINE EP").patch, 8));
+      const e = new Engine(SAMPLE_RATE, new PolySynth(byName("TINE EP").patch, 8), defaultSong());
       const out = new Float32Array(SAMPLE_RATE * 5);
       const notes = [48, 55, 59, 64, 71];
       const at = (i: number) => Math.floor(SAMPLE_RATE * 0.12 * i);
@@ -137,6 +138,7 @@ export const snippets: Snippet[] = [
     title: `Sequence · ${d.name} (${d.bpm} BPM, ${d.tracks.map((t) => t.patch).join(" + ")})`,
     render: () => {
       const e = engineForDemo(SAMPLE_RATE, d);
+      e.mode = "pattern";
       e.play();
       const out = new Float32Array(Math.floor(((SAMPLE_RATE * 60) / d.bpm) * 8 + SAMPLE_RATE)); // two bars + tail
       render(e, out, 0, Math.floor(((SAMPLE_RATE * 60) / d.bpm) * 8));
@@ -146,6 +148,39 @@ export const snippets: Snippet[] = [
       return fade(out);
     },
   })),
+  {
+    step: "Step 6",
+    title: "Pattern sequencer · default song, arrangement C A A B A (4 tracks, 104 BPM)",
+    render: () => {
+      const song = defaultSong();
+      const e = createEngine(SAMPLE_RATE, song, patchFor);
+      const bars = song.arrangement.reduce((t, p) => t + song.patterns[p].length / 16, 0);
+      const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 4 * bars);
+      const out = new Float32Array(body + SAMPLE_RATE * 2);
+      e.play();
+      render(e, out, 0, body);
+      e.stop();
+      render(e, out, body, out.length - body);
+      return fade(out);
+    },
+  },
+  {
+    step: "Step 6",
+    title: "Single pattern loop · pattern B (turnaround), two passes",
+    render: () => {
+      const song = defaultSong();
+      const e = createEngine(SAMPLE_RATE, song, patchFor);
+      e.mode = "pattern";
+      e.patternIndex = 1;
+      const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 8);
+      const out = new Float32Array(body + SAMPLE_RATE * 2);
+      e.play();
+      render(e, out, 0, body);
+      e.stop();
+      render(e, out, body, out.length - body);
+      return fade(out);
+    },
+  },
 ];
 
 /** Renders into out[pos .. pos+n) in worklet-sized chunks. */

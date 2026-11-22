@@ -1,7 +1,6 @@
 import { byName } from "../fm6/library";
-import { demos } from "../seq/demos";
-import { Engine } from "../seq/engine";
-import { PolySynth } from "../synth/poly";
+import { createEngine } from "../seq/engine";
+import { defaultSong, patchFor, Song } from "../seq/song";
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -13,17 +12,20 @@ type Msg =
   | { type: "noteOn"; note: number; vel?: number }
   | { type: "noteOff"; note: number }
   | { type: "patch"; patch: Uint8Array }
-  | { type: "trackPatch"; track: number; patch: Uint8Array }
-  | { type: "demo"; index: number }
+  | { type: "trackNoteOn"; track: number; note: number; vel?: number }
+  | { type: "trackNoteOff"; track: number; note: number }
+  | { type: "song"; song: Song; patches?: Uint8Array[] }
+  | { type: "mode"; mode: "pattern" | "song"; pattern: number }
   | { type: "play" }
-  | { type: "stop" }
-  | { type: "bpm"; bpm: number };
+  | { type: "stop" };
 
 class SynthProcessor extends AudioWorkletProcessor {
-  private engine = new Engine(sampleRate, new PolySynth(byName("TINE EP").patch, 8));
+  private engine = createEngine(sampleRate, defaultSong(), patchFor);
 
   constructor() {
     super();
+    this.engine.live.setPatch(byName("TINE EP").patch);
+    this.engine.onStep = (pattern, step, arrPos) => this.port.postMessage({ type: "pos", pattern, step, arrPos });
     this.port.onmessage = (e: MessageEvent<Msg>) => {
       const m = e.data;
       const en = this.engine;
@@ -31,23 +33,15 @@ class SynthProcessor extends AudioWorkletProcessor {
         case "noteOn": en.live.noteOn(m.note, m.vel ?? 100); break;
         case "noteOff": en.live.noteOff(m.note); break;
         case "patch": en.live.setPatch(m.patch); break;
-        case "trackPatch": en.tracks[m.track]?.synth.setPatch(m.patch); break;
-        case "demo": {
-          const d = demos[m.index];
-          en.stop();
-          en.tracks = [];
-          for (const t of d.tracks) {
-            const s = new PolySynth(byName(t.patch).patch, 6);
-            s.gain = 0.7;
-            en.addTrack(s, t.steps);
-          }
-          en.bpm = d.bpm;
-          en.swing = d.swing;
+        case "trackNoteOn": en.tracks[m.track]?.synth.noteOn(m.note, m.vel ?? 100); break;
+        case "trackNoteOff": en.tracks[m.track]?.synth.noteOff(m.note); break;
+        case "song":
+          en.setSong(m.song);
+          m.patches?.forEach((p, i) => en.tracks[i]?.synth.setPatch(p));
           break;
-        }
+        case "mode": en.mode = m.mode; en.patternIndex = m.pattern; break;
         case "play": en.play(); break;
-        case "stop": en.stop(); break;
-        case "bpm": en.bpm = m.bpm; break;
+        case "stop": en.stop(); this.port.postMessage({ type: "stopped" }); break;
       }
     };
   }
