@@ -6,6 +6,7 @@ import { engineById } from "../engines/registry";
 import { defaultMod } from "../mod/setup";
 import { demoSongs } from "../seq/songs";
 import { ARP_RATES } from "../synth/arp";
+import { SLICER_MODES, SLICER_RATES } from "../fx/slicer";
 import {
   P_ATK, P_CHOR, P_DEC, P_DETUNE, P_DIST, P_DLY, P_E0, P_ED_FLT, P_ED_PIT, P_ED_SHP, P_GLIDE, P_LD_AMP, P_LD_FLT, P_LD_PIT, P_LD_SHP,
   P_LFADE, P_LRATE, P_PAN, P_REL, P_REV, P_SPRD, P_SUS,
@@ -144,7 +145,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     return `<div class="mix ins"><label class="kc wideSel"><span>Step div</span><select data-seq="div">${ARP_RATES.map((n, k) => `<option value="${k}"${(q.div ?? 2) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
       <label class="kc"><span>Swing</span><input type="range" data-seq="swing" min="0" max="100" value="${q.swing ?? 0}"></label>
       <label class="kc"><span>Gate</span><input type="range" data-seq="gate" min="0" max="127" value="${q.gate ?? 115}"></label>
-      <label class="kc"><span>Quantize</span><input type="checkbox" data-seq="quantize"${(q.quantize ?? 1) ? " checked" : ""}></label></div>`;
+      <label class="kc"><span>Quantize</span><input type="checkbox" data-seq="quantize"${(q.quantize ?? 1) ? " checked" : ""}></label></div>
+      <div class="mix ins"><label class="kc wideSel"><span>Slicer</span><select data-sl="mode">${SLICER_MODES.map((n, k) => `<option value="${k}"${(t.slicer?.mode ?? 0) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="kc wideSel"><span>Pattern</span><select data-sl="pat">${Array.from({ length: 16 }, (_, k) => `<option value="${k + 1}"${(t.slicer?.pat ?? 1) === k + 1 ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>
+      <label class="kc wideSel"><span>Step</span><select data-sl="rate">${SLICER_RATES.map((n, k) => `<option value="${k}"${(t.slicer?.rate ?? 1) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="kc"><span>Depth</span><input type="range" data-sl="depth" min="0" max="127" value="${t.slicer?.depth ?? 100}"></label></div>`;
   }
 
   function modSection(t: Song["tracks"][number], i: number, lib: LibraryEntry[]): string {
@@ -434,6 +439,13 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         if (out && el.type === "range" && el.dataset.mod) out.textContent = el.value;
         commit();
       }
+      return;
+    }
+    if (trk && el.dataset.sl) {
+      const i = Number(trk.dataset.t);
+      const sl = (song.tracks[i].slicer ??= { mode: 0, pat: 1, rate: 1, depth: 100 }) as unknown as Record<string, number>;
+      sl[el.dataset.sl] = Number(el.value);
+      commit();
       return;
     }
     if (trk && el.dataset.seq) {

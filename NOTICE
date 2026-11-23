@@ -38,5 +38,6 @@ src/synth/voicelayer.ts: TypeScript port of Felucca's voice allocation (voice.c:
 src/synth/arp.ts, src/synth/chord.ts, src/synth/noteinput.ts: TypeScript ports of Felucca's arpeggiator (seq.c) and chord keys (chord.c; GPL-3.0-only).
 src/seq/trackseq.ts: TypeScript port of Felucca's step sequencer (seq.c: per-track length, division, swing and gate, ties, slides, ratchets, nudge, chances and conditions; GPL-3.0-only).
 src/seq/motion.ts: TypeScript port of Felucca's step automation and parameter locks (motion.c); the song sections follow song_chain.c (repeats, per-track lanes; GPL-3.0-only).
+src/fx/slicer.ts: TypeScript port of Felucca's SLICER insert (slicer.c: tempo-synced 16-step gate / stutter; GPL-3.0-only).
 src/mod/mod.ts: TypeScript port of Felucca's modulation matrix (mod.c) and track LFO (voice.c: waves, SYNC, FADE, S&H, SLEW; GPL-3.0-only).
 tests/ins-gold.txt is reference output of that code.

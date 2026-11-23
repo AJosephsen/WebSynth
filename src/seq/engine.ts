@@ -3,6 +3,7 @@ import { CTL } from "../engines/types";
 import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Insert } from "../fx/insert";
 import { Perform } from "../fx/perform";
+import { Slicer, SlicerSetting } from "../fx/slicer";
 import { NoteInput } from "../synth/noteinput";
 import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
@@ -15,6 +16,8 @@ export interface EngineTrack {
   synth: Synth;
   mute: boolean;
 }
+
+const OFF_SLICER: SlicerSetting = { mode: 0, pat: 1, rate: 1, depth: 100 };
 
 /** The live keyboard's place in the mix. */
 const LIVE_MIX: MixSetup = { ...defaultMix(), reverb: 25 };
@@ -55,6 +58,7 @@ export class Engine {
   private master = new Master();
   private dists: Dist[] = [];
   private inserts: Insert[] = [];
+  private slicers: Slicer[] = [];
   /** The FX hold layer: throws, mutes (see fx/perform.ts). */
   readonly perform = new Perform();
   /** The live keyboard's input: chord keys and the arpeggiator. */
@@ -206,6 +210,7 @@ export class Engine {
     this.applyPattern(false, 0);
     for (const s of this.seqs) s.start();
     for (const m of this.motions) m.begin();
+    for (const sl of this.slicers) sl.start();
     this.perform.start();
   }
 
@@ -256,6 +261,7 @@ export class Engine {
     (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
     const ins = (this.inserts[index] ??= new Insert());
     if (m.itype || ins.running) ins.process(m, b, CTL);
+    this.slice(index, base, b);
     const pf = this.perform;
     if (index < 4 && (pf.muteMask >> index) & 1) pf.mute(index, b, CTL);
     const lvl = LEVEL_Q12[m.level & 127];
@@ -277,6 +283,16 @@ export class Engine {
     if (pf.thr) pf.throwSend(m.level, m.reverb, m.delay, b, this.sendD, this.sendR, CTL);
   }
 
+
+  /** The SLICER of a track (its step clock always runs). */
+  private slice(index: number, base: MixSetup, b: Int32Array, sd?: Int32Array): void {
+    if (index >= TRACKS) return;
+    const sl = (this.slicers[index] ??= new Slicer());
+    const ts = base as Partial<import("./song").TrackSetup>;
+    const swing = Math.min(100, (this.song.tracks[index]?.seq?.swing ?? 0) + Math.min(100, Math.round(this.song.swing * 250)));
+    sl.process(ts.slicer ?? OFF_SLICER, b, CTL, this.song.bpm, swing, sd);
+  }
+
   /** SPREAD (fx.c mix_spread): the voices start left and right of PAN in turn, at PAN -/+ SPRD / 2. b is every voice (mono), d left minus right. */
   private mixSpread(src: Float32Array, side: Float32Array, index: number, base: MixSetup, synth: Synth): void {
     let m = base;
@@ -287,6 +303,7 @@ export class Engine {
     (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
     const ins = (this.inserts[index] ??= new Insert());
     if (m.itype || ins.running) ins.process(m, b, CTL);
+    this.slice(index, base, b, d);
     const pf = this.perform;
     if (index < 4 && (pf.muteMask >> index) & 1) pf.muteSd(index, b, d, CTL);
     const lvl = LEVEL_Q12[m.level & 127], pan = m.pan, s = ((synth.spreadAmount ?? 0) + 1) >> 1;

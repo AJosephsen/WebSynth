@@ -217,5 +217,20 @@ void m5; void lr;
   e.stop();
   check(store.read(13) === 0 && store.read(12) === 0, "stop restores the sound's own values");
 }
+// the SLICER insert gates a sustained sound
+{
+  const rmsOf = (sl?: { mode: number; pat: number; rate: number; depth: number }): number => {
+    const sg = song();
+    sg.patterns[0].steps[0][0] = { notes: [57], gate: 6 };
+    if (sl) sg.tracks[0].slicer = sl;
+    const out = render(sg, 600);
+    let sum = 0;
+    for (let i = 0; i < out.l.length; i++) sum += out.l[i] * out.l[i];
+    return Math.sqrt(sum / out.l.length);
+  };
+  const open = rmsOf();
+  const gated = rmsOf({ mode: 1, pat: 7, rate: 1, depth: 127 });
+  check(gated < open * 0.7 && gated > 0, `the SLICER gate closes the '.' steps (rms ${open.toFixed(3)} -> ${gated.toFixed(3)})`);
+}
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");
