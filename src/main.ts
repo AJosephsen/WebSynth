@@ -22,7 +22,7 @@ app.innerHTML = `
       <div class="oct"><button id="octd" title="Octave down (Z)">&minus;</button><span id="octv">C3</span><button id="octu" title="Octave up (X)">+</button></div>
     </div>
   </header>
-  <nav class="tabs" id="tabs"><button data-tab="sound" class="sel">Sound</button><button data-tab="seq">Sequencer</button></nav>
+  <nav class="tabs" id="tabs"><button data-tab="sound" class="sel">Sound</button><button data-tab="seq">Sequencer</button><button data-tab="perf">Perform</button></nav>
   <div id="status" class="statusbar"></div>
   <main>
     <div class="tab" data-tab="sound">
@@ -37,6 +37,18 @@ app.innerHTML = `
       <section><h2>Patch editor</h2><div id="pe"></div><div id="ee"></div></section>
     </div>
     <div class="tab" data-tab="seq" hidden><div id="seq"></div></div>
+    <div class="tab" data-tab="perf" hidden>
+      <section class="module"><h4>FX hold layer <small>(hold a pad; with Latch a press toggles it)</small></h4>
+        <div class="pads" id="pads">
+          <button class="pad" data-bit="12">REV THROW</button>
+          <button class="pad" data-bit="13">ECHO THROW</button>
+          <button class="pad mutepad" data-bit="14">MUTE 1</button><button class="pad mutepad" data-bit="15">MUTE 2</button>
+          <button class="pad mutepad" data-bit="16">MUTE 3</button><button class="pad mutepad" data-bit="17">MUTE 4</button>
+        </div>
+        <div class="knobs"><label class="kc"><span>Throw</span><input type="range" id="pf-throw" min="0" max="100" value="0"><output>0</output></label>
+          <label class="kc"><span>Latch</span><input type="checkbox" id="pf-latch"></label></div>
+      </section>
+    </div>
   </main>
   <footer class="kbd"><div class="keys" id="keys"></div><p>Keys A W S E D F T G Y H U J K, Z / X for the octave, the mouse or a MIDI keyboard. Further down the key, louder.</p></footer>`;
 
@@ -170,6 +182,39 @@ mountKnobs(app, (name, value) => {
   $("lcd3").textContent = `${name}: ${value}`;
   clearTimeout(lcdTimer);
   lcdTimer = window.setTimeout(() => ($("lcd3").textContent = ""), 1800);
+});
+
+// ---- performance layer ----
+const padHeld = new Set<number>();
+function padSet(bit: number, on: boolean): void {
+  if (on) padHeld.add(bit); else padHeld.delete(bit);
+  node?.port.postMessage({ type: "perf", bit, on });
+  app.querySelector(`.pad[data-bit="${bit}"]`)?.classList.toggle("on", on);
+}
+const padsEl = $("pads");
+padsEl.addEventListener("pointerdown", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>(".pad");
+  if (!b) return;
+  const bit = Number(b.dataset.bit);
+  if ($<HTMLInputElement>("pf-latch").checked) { padSet(bit, !padHeld.has(bit)); return; }
+  padsEl.setPointerCapture(e.pointerId);
+  b.dataset.pid = String(e.pointerId);
+  padSet(bit, true);
+});
+const padUp = (e: PointerEvent) => {
+  if ($<HTMLInputElement>("pf-latch").checked) return;
+  padsEl.querySelectorAll<HTMLElement>(".pad").forEach((b) => {
+    if (b.dataset.pid === String(e.pointerId)) { delete b.dataset.pid; padSet(Number(b.dataset.bit), false); }
+  });
+};
+padsEl.addEventListener("pointerup", padUp);
+padsEl.addEventListener("pointercancel", padUp);
+$<HTMLInputElement>("pf-throw").addEventListener("input", (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  node?.port.postMessage({ type: "perfThrow", amount: v });
+});
+$<HTMLInputElement>("pf-latch").addEventListener("change", (e) => {
+  if (!(e.target as HTMLInputElement).checked) [...padHeld].forEach((b) => padSet(b, false));
 });
 
 // ---- live input and the on-screen keyboard ----

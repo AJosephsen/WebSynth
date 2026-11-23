@@ -2,6 +2,7 @@ import { clamp, mulq15 } from "../engines/dsp";
 import { CTL } from "../engines/types";
 import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Insert } from "../fx/insert";
+import { Perform } from "../fx/perform";
 import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
@@ -60,6 +61,8 @@ export class Engine {
   private master = new Master();
   private dists: Dist[] = [];
   private inserts: Insert[] = [];
+  /** The FX hold layer: throws, mutes (see fx/perform.ts). */
+  readonly perform = new Perform();
   private fxs: FxSettings;
   // output FIFO
   private fifoL = new Float32Array(CTL);
@@ -93,11 +96,6 @@ export class Engine {
     this.tracks.push(t);
     this.applyTracks();
     return t;
-  }
-
-  /** ECHO THROW: more delay feedback while held (0..1). */
-  setEchoThrow(amount: number): void {
-    this.bus.throwAmount = Math.round(clamp(amount, 0, 1) * 32768);
   }
 
   /** Swaps the synth of a track (or the live synth, track -1) for a new instrument. */
@@ -233,6 +231,8 @@ export class Engine {
     (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
     const ins = (this.inserts[index] ??= new Insert());
     if (m.itype || ins.running) ins.process(m, b, CTL);
+    const pf = this.perform;
+    if (index < 4 && (pf.muteMask >> index) & 1) pf.mute(index, b, CTL);
     const lvl = LEVEL_Q12[m.level & 127];
     const pan = m.pan;
     const gl = 4096 - (pan > 0 ? pan * 64 : 0);
@@ -249,9 +249,11 @@ export class Engine {
       this.mixL[i] += Math.imul(x, gl) >> 12;
       this.mixR[i] += Math.imul(x, gr) >> 12;
     }
+    if (pf.thr) pf.throwSend(m.level, m.reverb, m.delay, b, this.sendD, this.sendR, CTL);
   }
 
   private produceBlock(): void {
+    this.perform.begin(CTL);
     this.tracks.forEach((t, i) => { const s = this.song.tracks[i]; if (s) t.synth.setMix?.(s); });
     this.live.setMix?.(this.liveMix);
     this.renderSources();
@@ -261,6 +263,8 @@ export class Engine {
       this.mixSource(this.tbuf[i], i, setup ?? defaultMix(), t.synth);
     });
     this.mixSource(this.tbuf[this.tracks.length], this.tracks.length, this.liveMix, this.live);
+    if (this.perform.throwMacro || this.perform.busy) this.perform.pre(this.mixL, this.mixR, this.sendD, this.sendR, CTL);
+    this.bus.throwAmount = this.perform.ew1;
     this.bus.process(this.fxs, this.sendC, this.sendD, this.sendR, this.wet, CTL);
     if (this.bus.side) this.bus.sideMix(this.mixL, this.mixR, CTL);
     const mg = this.masterQ12;

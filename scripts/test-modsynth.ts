@@ -1,7 +1,7 @@
 // The matrix inside the synth and the sequencer: modulation changes the sound, stays finite, routes to the mix, TIME delays a step.
 import { factoryInstrument } from "../src/instruments";
 import { createEngine } from "../src/seq/engine";
-import { emptyPattern, sanitizeSong, Song } from "../src/seq/song";
+import { defaultSongFx, emptyPattern, sanitizeSong, Song } from "../src/seq/song";
 import { defaultMod, ModSetup } from "../src/mod/setup";
 import { MD_CUT, MD_PAN, MD_PITCH, MD_TIME, MS_LFO, MS_RAND, MS_MODW, MD_DEPTH } from "../src/mod/mod";
 
@@ -13,6 +13,7 @@ function song(mod?: ModSetup): Song {
     bpm: 120, swing: 0,
     tracks: [{ patch: "ANALOG/SAW LEAD", mute: false, level: 112, pan: 0, dist: 0, chorus: 0, delay: 0, reverb: 0, itype: 0, imix: 64, ia: 0, ib: 0, ic: 0, mod },
       { patch: "INIT", mute: true }, { patch: "INIT", mute: true }, { patch: "INIT", mute: true }] as Song["tracks"],
+    fx: defaultSongFx(),
     patterns: [emptyPattern("A", 4)],
     arrangement: [0],
   };
@@ -61,5 +62,21 @@ const sx = sanitizeSong(JSON.parse(JSON.stringify(song(m2))));
 check(JSON.stringify(sx?.tracks[0].mod) === JSON.stringify(m2), "the modulation setup survives sanitize");
 check(sanitizeSong(JSON.parse(JSON.stringify(song())))?.tracks[0].mod === undefined, "a default setup is not stored");
 void m5; void lr;
+// the FX hold layer: a throw changes the mix, a mute key silences its track (after its 2.9 ms ramp)
+{
+  const N = 600 * 32;
+  const make = (bit?: number): Float32Array => {
+    const e = createEngine(44100, song(), factoryInstrument);
+    if (bit !== undefined) e.perform.hold(bit, true);
+    e.play();
+    const l = new Float32Array(N), r = new Float32Array(N);
+    e.renderStereo(l, r);
+    return l;
+  };
+  const plain = make(), rev = make(12), echo = make(13), muted = make(14);
+  check(rev.every(Number.isFinite) && diff(plain, rev) > 1, "REV THROW adds reverb send");
+  check(diff(plain, echo) > 1, "ECHO THROW adds delay send");
+  check(peak(muted.subarray(1000)) < peak(plain) * 0.02, "a mute key silences its track");
+}
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");
