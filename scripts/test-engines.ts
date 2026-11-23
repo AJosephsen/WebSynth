@@ -2,12 +2,13 @@
 import { readFileSync } from "node:fs";
 import { renderPhrase } from "../src/engines/minihost";
 import { EngineDef } from "../src/engines/types";
-import { ANALOG_PRESETS, LOFI_PRESETS, TRIO_PRESETS, WHEEL_PRESETS, NOISE_PRESETS, Preset } from "../src/engines/presets";
+import { ANALOG_PRESETS, LOFI_PRESETS, TRIO_PRESETS, WHEEL_PRESETS, NOISE_PRESETS, PHASE_PRESETS, Preset } from "../src/engines/presets";
 import { ENG_ANALOG } from "../src/engines/analog";
 import { ENG_LOFI } from "../src/engines/lofi";
 import { ENG_TRIO } from "../src/engines/trio";
 import { ENG_WHEEL } from "../src/engines/wheel";
 import { ENG_NOISE } from "../src/engines/noise";
+import { ENG_PHASE } from "../src/engines/phase";
 
 const ENGS: { id: string; e: EngineDef; presets: Preset[] }[] = [
   { id: "analog", e: ENG_ANALOG, presets: ANALOG_PRESETS },
@@ -15,6 +16,7 @@ const ENGS: { id: string; e: EngineDef; presets: Preset[] }[] = [
   { id: "trio", e: ENG_TRIO, presets: TRIO_PRESETS },
   { id: "wheel", e: ENG_WHEEL, presets: WHEEL_PRESETS },
   { id: "noise", e: ENG_NOISE, presets: NOISE_PRESETS },
+  { id: "phase", e: ENG_PHASE, presets: PHASE_PRESETS },
 ];
 const only = process.argv[2];
 const lines: string[] = [];
