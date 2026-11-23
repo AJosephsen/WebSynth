@@ -21,3 +21,7 @@ src/fx/: TypeScript ports of the effects of Felucca's fx.c (GPL-3.0-only): DIST,
 SPRING and HALL reverbs and the master limiter. tests/fx-gold.txt is reference output of that code.
 src/drum/: TypeScript ports of Felucca's drum_voice.c and the lane/kit logic of eng_drum.c (GPL-3.0-only).
 tests/drum-gold.txt is reference output of drum_voice.c.
+
+src/engines/formant.ts, src/engines/phys.ts: TypeScript ports of Felucca's eng_formant.c (VOICE, after Klatt 1980 and klattsch design
+notes), eng_phys.c, phys_dsp.c and phys_symp.c (PHYS: DaisySP by Electrosmith / Emilie Gillet, MIT; Rings by Emilie Gillet, MIT; fixed-point ports
+by Leo Kuroshita, GPL-3.0-only). tests/voice-gold.txt and tests/phys-gold.txt are reference output of that C code.
