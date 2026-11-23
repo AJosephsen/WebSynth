@@ -103,7 +103,8 @@ poly.render(buf, 0, buf.length);
 check(buf.every(Number.isFinite) && buf.some((x) => x !== 0), "poly output finite and non-silent");
 // sequencer: 120 BPM, 44.1 kHz -> a 16th is 5513 frames (5512.5 rounded)
 import { createEngine } from "../src/seq/engine";
-import { defaultSong, emptyPattern, patchFor, sanitizeSong, Song } from "../src/seq/song";
+import { defaultSong, emptyPattern, sanitizeSong, Song } from "../src/seq/song";
+import { factoryInstrument as patchFor } from "../src/instruments";
 const mini: Song = {
   bpm: 120, swing: 0,
   tracks: [{ patch: "PLUCK", mute: false }, { patch: "INIT", mute: true }, { patch: "INIT", mute: true }, { patch: "INIT", mute: true }],
@@ -145,5 +146,20 @@ check(g22.carriers.join() === "1,3,4,5" && has(g22, 6, 3) && has(g22, 6, 4) && h
 check(g32.carriers.length === 6 && g32.edges.length === 0, "algorithm 32 graph");
 check(g1.level[6] === 3 && g1.level[3] === 0, "algorithm 1 stack depth");
 check(envPoints([99, 50, 50, 50], [99, 75, 0, 0], 200, 70).split(" ").length === 6, "envelope polyline");
+// every factory instrument (FM6 voices and engine presets) plays: finite, audible, within range, and releases
+import { factoryEntries } from "../src/instruments";
+import { makeSynth } from "../src/synth/synth";
+for (const e of factoryEntries) {
+  const syn = makeSynth(e.instrument, 4);
+  const out = new Float32Array(44100);
+  syn.noteOn(e.note, 100);
+  syn.render(out, 0, 22050);
+  syn.noteOff(e.note);
+  syn.render(out, 22050, 22050);
+  let pk = 0, bad = 0;
+  for (const x of out) { if (!Number.isFinite(x)) bad++; pk = Math.max(pk, Math.abs(x)); }
+  if (bad || pk < 0.003 || pk > 4) { bad3++; console.log(`FAIL instrument ${e.id}: peak ${pk.toFixed(3)} nonfinite ${bad}`); }
+}
+check(factoryEntries.length === 33 + 37, `factory entries (got ${factoryEntries.length})`);
 console.log(bad3 ? `FAIL ${bad3}` : "OK formats, polyphony, sequencer");
 process.exit(bad2 + bad3 ? 1 : 0);

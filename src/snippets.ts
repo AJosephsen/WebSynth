@@ -2,7 +2,9 @@ import { Operator } from "./dsp/operator";
 import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
 import { PolySynth } from "./synth/poly";
 import { createEngine, Engine } from "./seq/engine";
-import { defaultSong, patchFor } from "./seq/song";
+import { defaultSong } from "./seq/song";
+import { engineEntries, factoryInstrument } from "./instruments";
+import { makeSynth } from "./synth/synth";
 import { demos, engineForDemo } from "./seq/demos";
 export { loadSysex } from "./fm6/library";
 import { Fm6Voice } from "./fm6/note";
@@ -153,7 +155,7 @@ export const snippets: Snippet[] = [
     title: "Pattern sequencer · default song, arrangement C A A B A (4 tracks, 104 BPM)",
     render: () => {
       const song = defaultSong();
-      const e = createEngine(SAMPLE_RATE, song, patchFor);
+      const e = createEngine(SAMPLE_RATE, song, factoryInstrument);
       const bars = song.arrangement.reduce((t, p) => t + song.patterns[p].length / 16, 0);
       const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 4 * bars);
       const out = new Float32Array(body + SAMPLE_RATE * 2);
@@ -169,7 +171,7 @@ export const snippets: Snippet[] = [
     title: "Single pattern loop · pattern B (turnaround), two passes",
     render: () => {
       const song = defaultSong();
-      const e = createEngine(SAMPLE_RATE, song, patchFor);
+      const e = createEngine(SAMPLE_RATE, song, factoryInstrument);
       e.mode = "pattern";
       e.patternIndex = 1;
       const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 8);
@@ -181,6 +183,19 @@ export const snippets: Snippet[] = [
       return fade(out);
     },
   },
+  ...engineEntries.map((e): Snippet => ({
+    step: "Engines",
+    title: `${e.bank} · ${e.name}`,
+    render: () => {
+      const syn = makeSynth(e.instrument, 4);
+      const out = new Float32Array(Math.floor(SAMPLE_RATE * 3.5));
+      syn.noteOn(e.note, 100);
+      syn.render(out, 0, Math.floor(SAMPLE_RATE * 1.5));
+      syn.noteOff(e.note);
+      syn.render(out, Math.floor(SAMPLE_RATE * 1.5), out.length - Math.floor(SAMPLE_RATE * 1.5));
+      return fade(out);
+    },
+  })),
 ];
 
 /** Renders into out[pos .. pos+n) in worklet-sized chunks. */

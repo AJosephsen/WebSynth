@@ -152,6 +152,10 @@ export function mountPatchEditor(root: HTMLElement, deps: EditorDeps) {
   });
 
   return {
+    clear(): void {
+      origin = undefined;
+      root.innerHTML = "";
+    },
     /** Loads a library voice into the editor (works on a copy). */
     load(p: LibraryPatch): void {
       origin = p;

@@ -1,4 +1,5 @@
-import { LibraryPatch } from "../fm6/library";
+import { LibraryEntry } from "../instruments";
+import { Instrument } from "../synth/synth";
 import {
   clonePattern, defaultSong, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
 } from "../seq/song";
@@ -12,7 +13,7 @@ const GATES = [0.5, 0.9, 1.8, 3.6, 7.5];
 const ROWS = 24;
 
 export interface SequencerDeps {
-  library: () => LibraryPatch[];
+  library: () => LibraryEntry[];
   send: (msg: Record<string, unknown>) => void;
 }
 
@@ -74,13 +75,13 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
 
   const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>("#" + id)!;
 
-  function patchBytes(): Uint8Array[] {
+  function instruments(): Instrument[] {
     const lib = deps.library();
-    return song.tracks.map((t) => (lib.find((p) => p.name === t.patch) ?? lib[0]).patch);
+    return song.tracks.map((t) => (lib.find((p) => p.id === t.patch) ?? lib[0]).instrument);
   }
   function commit(sendPatches = false): void {
     try { localStorage.setItem(KEY, JSON.stringify(song)); } catch { /* storage unavailable */ }
-    deps.send({ type: "song", song, patches: sendPatches ? patchBytes() : undefined });
+    deps.send({ type: "song", song, instruments: sendPatches ? instruments() : undefined });
   }
   const cur = () => song.patterns[pat];
 
@@ -93,7 +94,10 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const lib = deps.library();
     $("sq-tracks").innerHTML = song.tracks
       .map((t, i) => {
-        const opts = lib.map((p) => `<option${p.name === t.patch ? " selected" : ""}>${p.name}</option>`).join("");
+        const banks = [...new Set(lib.map((p) => p.bank))];
+        const opts = banks
+          .map((b) => `<optgroup label="${b}">${lib.filter((p) => p.bank === b).map((p) => `<option value="${p.id}"${p.id === t.patch ? " selected" : ""}>${p.name}</option>`).join("")}</optgroup>`)
+          .join("");
         return `<div class="trk${i === track ? " sel" : ""}" data-t="${i}">
           <button data-act="sel">Track ${i + 1}</button>
           <select data-act="patch">${opts}</select>

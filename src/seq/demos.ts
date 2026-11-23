@@ -1,5 +1,6 @@
 import { Engine, createEngine } from "./engine";
-import { patchFor, patternFrom, Song, Step, TRACKS } from "./song";
+import { factoryInstrument } from "../instruments";
+import { patternFrom, Song, Step, TRACKS } from "./song";
 
 const n = (...notes: number[]): Step => ({ notes });
 const _ = null;
@@ -98,5 +99,5 @@ export function demoSong(d: Demo): Song {
 
 /** Builds an engine that plays a demo. */
 export function engineForDemo(sampleRate: number, demo: Demo): Engine {
-  return createEngine(sampleRate, demoSong(demo), patchFor);
+  return createEngine(sampleRate, demoSong(demo), factoryInstrument);
 }

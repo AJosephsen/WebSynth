@@ -1,5 +1,3 @@
-import { byName } from "../fm6/library";
-
 /** One step: notes (a chord), velocity 1..127 and gate length in steps. null = rest. */
 export type Step = { notes: number[]; vel?: number; gate?: number } | null;
 
@@ -13,7 +11,7 @@ export interface Pattern {
 }
 
 export interface TrackSetup {
-  patch: string; // library patch name (kept by name so a song survives a library change)
+  patch: string; // instrument id (see instruments.ts); kept by name so a song survives a library change
   mute: boolean;
 }
 
@@ -103,12 +101,4 @@ export function defaultSong(): Song {
     patterns: [groove, turn, breakdown, emptyPattern("D empty")],
     arrangement: [2, 0, 0, 1, 0],
   };
-}
-
-export function patchFor(name: string): Uint8Array {
-  try {
-    return byName(name).patch;
-  } catch {
-    return byName("INIT").patch;
-  }
 }

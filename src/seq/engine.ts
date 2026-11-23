@@ -1,14 +1,14 @@
-import { PolySynth } from "../synth/poly";
+import { Instrument, makeSynth, Synth } from "../synth/synth";
 import { MAX_STEPS, Pattern, Song, Step, TRACKS } from "./song";
 
 interface PendingOff {
   frames: number;
-  synth: PolySynth;
+  synth: Synth;
   notes: number[];
 }
 
 export interface EngineTrack {
-  synth: PolySynth;
+  synth: Synth;
   mute: boolean;
 }
 
@@ -19,7 +19,7 @@ export interface EngineTrack {
  */
 export class Engine {
   tracks: EngineTrack[] = [];
-  live: PolySynth;
+  live: Synth;
   song: Song;
   mode: "pattern" | "song" = "song";
   patternIndex = 0; // the pattern that loops in pattern mode
@@ -33,17 +33,28 @@ export class Engine {
   private framesToStep = 0;
   private pending: PendingOff[] = [];
 
-  constructor(private readonly sampleRate: number, live: PolySynth, song: Song) {
+  constructor(private readonly sampleRate: number, live: Synth, song: Song) {
     this.live = live;
     this.song = song;
   }
 
   get bpm(): number { return this.song.bpm; }
 
-  addTrack(synth: PolySynth): EngineTrack {
+  addTrack(synth: Synth): EngineTrack {
     const t = { synth, mute: false };
     this.tracks.push(t);
     return t;
+  }
+
+  /** Swaps the synth of a track (or the live synth, track -1) for a new instrument. */
+  setInstrument(track: number, inst: Instrument): void {
+    const old = track < 0 ? this.live : this.tracks[track]?.synth;
+    if (!old) return;
+    old.allOff();
+    const s = makeSynth(inst, track < 0 ? 8 : 6);
+    s.gain = old.gain;
+    if (track < 0) this.live = s;
+    else this.tracks[track].synth = s;
   }
 
   /** Replaces the song while it plays; the position stays valid. */
@@ -126,10 +137,10 @@ export class Engine {
 }
 
 /** Builds an engine for a song: one polyphonic synth per track. */
-export function createEngine(sampleRate: number, song: Song, patchFor: (name: string) => Uint8Array, voices = 6): Engine {
-  const e = new Engine(sampleRate, new PolySynth(patchFor("TINE EP"), 8), song);
+export function createEngine(sampleRate: number, song: Song, instrumentFor: (id: string) => Instrument, voices = 6): Engine {
+  const e = new Engine(sampleRate, makeSynth(instrumentFor("TINE EP"), 8), song);
   song.tracks.forEach((t) => {
-    const s = new PolySynth(patchFor(t.patch), voices);
+    const s = makeSynth(instrumentFor(t.patch), voices);
     s.gain = 0.7;
     e.addTrack(s).mute = t.mute;
   });
