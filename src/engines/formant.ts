@@ -169,6 +169,7 @@ export const ENG_FORMANT: EngineDef = {
   ],
   knob: [P_E0, P_E4, P_E5, P_E2],
   keep: 0,
+  poly: 4,
   noteOn,
   render,
 };

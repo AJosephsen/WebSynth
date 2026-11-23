@@ -26,9 +26,10 @@ export class EnginePoly implements Synth {
   private last: Int32Array;
 
   constructor(private def: EngineDef, inst: EngineInstrument, voices = 8) {
-    this.voices = Array.from({ length: voices }, () => new EngVoice());
+    const n = def.poly ? Math.min(voices, def.poly) : voices;
+    this.voices = Array.from({ length: n }, () => new EngVoice());
     this.track.v = this.voices;
-    this.last = new Int32Array(voices);
+    this.last = new Int32Array(n);
     this.setInstrument(inst);
   }
 
