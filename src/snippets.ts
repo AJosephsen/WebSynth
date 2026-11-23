@@ -234,6 +234,14 @@ function fxDemos(): Snippet[] {
     make("Tempo delay · 1/8 dotted, feedback 70", { delay: 80 }, { dtime: 10, dfdbk: 70, dmix: 100 }),
     make("Chorus", { chorus: 90 }, { crate: 30, cdepth: 90 }),
     make("Distortion 60 on ANALOG SAW LEAD", { dist: 60, reverb: 20 }, {}, "ANALOG/SAW LEAD"),
+    make("Insert · SOFT drive on TINE EP", { itype: 1, ia: 90, ib: 80, ic: 112 }, {}),
+    make("Insert · HARD clip on TINE EP", { itype: 2, ia: 90, ib: 80, ic: 112 }, {}),
+    make("Insert · FOLD on ANALOG SAW LEAD", { itype: 3, ia: 60, ib: 100, ic: 112 }, {}, "ANALOG/SAW LEAD"),
+    make("Insert · FUZZ on ANALOG SAW LEAD", { itype: 4, ia: 90, ib: 70, ic: 112 }, {}, "ANALOG/SAW LEAD"),
+    make("Insert · CRUSH 6 bit, 11 kHz on TINE EP", { itype: 5, ia: 40, ib: 40, ic: 110 }, {}),
+    make("Insert · PHASER on WARM PAD", { itype: 6, ia: 40, ib: 110, ic: 80, reverb: 20 }, {}, "WARM PAD"),
+    make("Insert · FLANGER on ANALOG SAW LEAD", { itype: 7, ia: 25, ib: 100, ic: 70 }, {}, "ANALOG/SAW LEAD"),
+    make("Insert · CHORUS on TINE EP", { itype: 8, ia: 45, ib: 90, ic: 40 }, {}),
   ];
 }
 

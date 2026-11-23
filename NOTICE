@@ -31,3 +31,6 @@ src/sampler/: TypeScript ports of Felucca's eng_sample.c, eng_grain.c and eng_sl
 Versilian Studios (Sam Gossner): VSCO-2 Community Edition (https://github.com/sgossner/VSCO-2-CE) and VCSL
 (https://github.com/sgossner/VCSL). The drum break of SLICE is built from Felucca's generated drums (the Hügelton Sample
 Pack, CC0 1.0). tests/sample-gold.txt, grain-gold.txt and slice-gold.txt are reference output of the C code.
+
+src/fx/insert.ts: TypeScript port of Felucca's INSERT effect (fx.c track_insert: SOFT, HARD, FOLD, FUZZ, CRUSH, PHASER, FLANGER, CHORUS; GPL-3.0-only).
+tests/ins-gold.txt is reference output of that code.

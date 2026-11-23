@@ -1,3 +1,4 @@
+import { defaultInsert, InsertSetup } from "../fx/insert";
 /** One step: notes (a chord), velocity 1..127 and gate length in steps. null = rest. */
 export type Step = { notes: number[]; vel?: number; gate?: number } | null;
 
@@ -11,7 +12,7 @@ export interface Pattern {
 }
 
 /** A track's place in the mix: level, pan and the sends (Felucca's P_LEVEL, P_PAN, P_DIST, P_CHOR, P_DLY, P_REV). */
-export interface MixSetup {
+export interface MixSetup extends InsertSetup {
   level: number; // 0..127, 112 = 0 dB
   pan: number; // -64..63
   dist: number; // 0..127 per-track distortion
@@ -25,7 +26,7 @@ export interface TrackSetup extends MixSetup {
   mute: boolean;
 }
 
-export const defaultMix = (): MixSetup => ({ level: 112, pan: 0, dist: 0, chorus: 0, delay: 0, reverb: 0 });
+export const defaultMix = (): MixSetup => ({ level: 112, pan: 0, dist: 0, chorus: 0, delay: 0, reverb: 0, ...defaultInsert() });
 
 /** The global effect settings of a song (the bpm is the song's). */
 export interface SongFx {
@@ -95,6 +96,11 @@ export function sanitizeSong(raw: unknown): Song | null {
       chorus: Math.round(clamp(t?.chorus, 0, 127, d.chorus)),
       delay: Math.round(clamp(t?.delay, 0, 127, d.delay)),
       reverb: Math.round(clamp(t?.reverb, 0, 127, d.reverb)),
+      itype: Math.round(clamp(t?.itype, 0, 8, d.itype)),
+      imix: Math.round(clamp(t?.imix, 0, 127, d.imix)),
+      ia: Math.round(clamp(t?.ia, 0, 127, d.ia)),
+      ib: Math.round(clamp(t?.ib, 0, 127, d.ib)),
+      ic: Math.round(clamp(t?.ic, 0, 127, d.ic)),
     };
   });
   const f = (s.fx ?? {}) as Partial<SongFx>;

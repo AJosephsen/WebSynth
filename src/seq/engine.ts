@@ -1,6 +1,8 @@
 import { clamp, mulq15 } from "../engines/dsp";
 import { CTL } from "../engines/types";
 import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
+import { Insert } from "../fx/insert";
+import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
 import { MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
 
@@ -14,9 +16,6 @@ export interface EngineTrack {
   synth: Synth;
   mute: boolean;
 }
-
-/** Felucca's LEVEL_Q12: 0 = off, else dB = (v - 112) / 2 (112 = 0 dB). */
-const LEVEL_Q12 = Array.from({ length: 128 }, (_, v) => (v ? Math.round(4096 * 10 ** ((v - 112) / 2 / 20)) : 0));
 
 /** The live keyboard's place in the mix. */
 const LIVE_MIX: MixSetup = { ...defaultMix(), reverb: 25 };
@@ -49,6 +48,7 @@ export class Engine {
   private bus = new FxBus();
   private master = new Master();
   private dists: Dist[] = [];
+  private inserts: Insert[] = [];
   private fxs: FxSettings;
   // output FIFO
   private fifoL = new Float32Array(CTL);
@@ -185,6 +185,8 @@ export class Engine {
     const b = this.ibuf;
     for (let i = 0; i < CTL; i++) b[i] = Math.round(src[i] * 32768);
     (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
+    const ins = (this.inserts[index] ??= new Insert());
+    if (m.itype || ins.running) ins.process(m, b, CTL);
     const lvl = LEVEL_Q12[m.level & 127];
     const pan = m.pan;
     const gl = 4096 - (pan > 0 ? pan * 64 : 0);

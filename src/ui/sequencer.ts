@@ -1,6 +1,7 @@
 import { LibraryEntry } from "../instruments";
 import { Instrument } from "../synth/synth";
 import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
+import { INSERT_NAMES, insertLabels } from "../fx/insert";
 import {
   clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
 } from "../seq/song";
@@ -107,7 +108,13 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
           <button data-act="sel">Track ${i + 1}</button>
           <select data-act="patch">${opts}</select>
           <button data-act="mute" class="${t.mute ? "off" : ""}">${t.mute ? "Muted" : "Mute"}</button>
-          <div class="mix">${MIX_KEYS.map(([k, label, lo, hi]) => `<label>${label}<input type="range" data-mix="${k}" min="${lo}" max="${hi}" value="${t[k]}"></label>`).join("")}</div></div>`;
+          <div class="mix">${MIX_KEYS.map(([k, label, lo, hi]) => `<label>${label}<input type="range" data-mix="${k}" min="${lo}" max="${hi}" value="${t[k]}"></label>`).join("")}</div>
+          <div class="mix ins"><label>Insert<select data-mix="itype">${INSERT_NAMES.map((n, k) => `<option value="${k}"${t.itype === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>${
+            t.itype
+              ? `<label>Mix<input type="range" data-mix="imix" min="0" max="127" value="${t.imix}"></label>` +
+                (["ia", "ib", "ic"] as const).map((k, n) => `<label>${insertLabels(t.itype)[n]}<input type="range" data-mix="${k}" min="0" max="127" value="${t[k]}"></label>`).join("")
+              : ""
+          }</div></div>`;
       })
       .join("");
   }
@@ -234,6 +241,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     if (trk && el.dataset.mix) {
       (song.tracks[Number(trk.dataset.t)] as unknown as Record<string, number>)[el.dataset.mix] = Number(el.value);
       commit();
+      if (el.dataset.mix === "itype") renderTracks();
     } else if (el.dataset.fx && el.type === "range") {
       (song.fx as unknown as Record<string, number>)[el.dataset.fx] = Number(el.value);
       commit();
