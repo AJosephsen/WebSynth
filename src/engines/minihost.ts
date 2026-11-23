@@ -50,13 +50,13 @@ const NBLK = 240;
 export interface RenderResult { hash: bigint; peak: number }
 
 /** The reference phrase: renders a preset and returns an FNV-1a 64 hash of the output and its peak. */
-export function renderPhrase(e: EngineDef, pr: Pick<Preset, "e" | "env">, ftype: number): RenderResult {
+export function renderPhrase(e: EngineDef, pr: Pick<Preset, "e" | "env">, ftype: number, reset = true): RenderResult {
   const t = new Track();
   const out = new Int32Array(CTL);
   const last = new Int32Array(NVOICE);
   let h = 14695981039346656037n;
   let peak = 0;
-  e.reset?.();
+  if (reset) e.reset?.();
   vage = 0;
   for (let k = 0; k < 8; k++) t.p[P_E0 + k] = pr.e[k];
   t.p[P_ATK] = pr.env[0];
