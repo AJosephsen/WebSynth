@@ -165,36 +165,42 @@ function basement(): Song {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 4. Rolling Rhodes: drum and bass at 172 BPM (D minor, Dm9 Gm9 Bbmaj9 A7b9, a syncopated Rhodes riff, sub bass, pad)
+// 4. Velvet Rhodes: a slow, cool groove at 78 BPM (D minor, Dm9 Gm9 Bbmaj9 A7b9; Rhodes riff, slap bass, pocket drums, pad)
 // ---------------------------------------------------------------------------------------------------------------------
-function rolling(): Song {
-  const dk = "k+h . h . s+h . h . h . k+h . s+h . h s/60";
-  const bassBar = (r: string): string => `${r}:3.5/112 . . ${r}:1/90 . . ${r}:1.5/95 . . . ${r}:3/105 . . . ${r}:1/85 .`;
+function velvet(): Song {
+  const dkA = "k+h h/60 h h/50 s+h h/55 h k h h/60 k+h h/50 s+h h/60 o s/40";
+  const dkB = "k+h h/60 h h/50 s+h h/55 h k h h/60 k+h s/35 s+h h/60 h k/60";
+  const bassBar = (r: number, alt: boolean): string => {
+    const t = Array<string>(16).fill(".");
+    t[0] = `${name(r)}:2/112`; t[3] = `${name(r)}:1/80`; t[5] = `${name(r + 12)}:1/92`; t[7] = `${name(r)}:1/85`;
+    t[10] = `${name(r)}:2/102`; t[13] = `${name(r + 7)}:1/85`; t[14] = alt ? `${name(r + 12)}:1/90` : `${name(r)}:1/80`;
+    return t.join(" ");
+  };
   const R1 = "X:2 . . X:1 . X:1 . . X:2 . . X:1 . X . .";
   const R2 = "X:2 . . X:1 . X:1 . . X:2 . . X:1 . L T X:1";
   const ch = { dm9: "f4 a4 c5 e5", gm9: "f4 a4 bb4 d5", bbm9: "a4 c5 d5 f5", a7: "g4 bb4 c#5 e5" };
   const riff = (c: string, i: number): string => comp(i === 0 ? R1 : R2, chord(c));
   const padBar = (c: string): string => `${join(chord(c).map((n) => n - 12), ":15.5/70")} ${". ".repeat(15).trim()}`;
-  const roots = { dm9: "d2", gm9: "g1", bbm9: "bb1", a7: "a1" };
+  const roots = { dm9: midi("d2"), gm9: midi("g1"), bbm9: midi("bb1"), a7: midi("a1") };
   const pairs: [keyof typeof ch, keyof typeof ch][] = [["dm9", "gm9"], ["bbm9", "a7"]];
   const make = (label: string, use: boolean[]): Pattern[] =>
     pairs.map(([x, y], i) =>
       pattern(`${label} ${i + 1}`, [
-        use[0] ? [dk, dk] : [],
-        use[1] ? [bassBar(roots[x]), bassBar(roots[y])] : [],
+        use[0] ? [dkA, i === 1 ? dkB : dkA] : [],
+        use[1] ? [bassBar(roots[x], false), bassBar(roots[y], true)] : [],
         [riff(ch[x], 0), riff(ch[y], 1)],
         use[2] ? [padBar(ch[x]), padBar(ch[y])] : [],
       ], [0]));
   const [i1, i2] = make("Intro", [false, false, true]);
-  const [d1, d2] = make("Drop", [true, true, true]);
+  const [g1, g2] = make("Groove", [true, true, true]);
   const [b1, b2] = make("Break", [false, true, true]);
-  return song(172, 0, [
-    { patch: "DRUM/TIGHT KIT", mix: { level: 108, reverb: 10 } },
-    { patch: "ANALOG/SUB BASS", mix: { level: 112 } },
-    { patch: "TINE EP", mix: { level: 104, pan: -8, chorus: 45, delay: 28, reverb: 22, itype: 8, imix: 35, ia: 40, ib: 80, ic: 40 } },
-    { patch: "WARM PAD", mix: { level: 70, pan: 12, chorus: 30, reverb: 60 } },
-  ], { dtime: 10, dfdbk: 40, dcolor: 60, dmix: 70, rtype: 2, rsize: 95, rdamp: 55, crate: 30, cdepth: 60 },
-  [i1, i2, d1, d2, b1, b2], [0, 1, 2, 3, 2, 3, 4, 5, 2, 3, 2, 3]);
+  return song(78, 0.14, [
+    { patch: "DRUM/DRUM KIT", mix: { level: 104, reverb: 14 } },
+    { patch: "SLAP BASS", mix: { level: 106 } },
+    { patch: "TINE EP", mix: { level: 104, pan: -8, chorus: 45, delay: 28, reverb: 24, itype: 8, imix: 35, ia: 40, ib: 80, ic: 40 } },
+    { patch: "WARM PAD", mix: { level: 66, pan: 12, chorus: 30, reverb: 60 } },
+  ], { dtime: 10, dfdbk: 42, dcolor: 55, dmix: 70, rtype: 2, rsize: 95, rdamp: 55, crate: 25, cdepth: 55 },
+  [i1, i2, g1, g2, b1, b2], [0, 1, 2, 3, 2, 3, 4, 5, 2, 3, 2, 3]);
 }
 
 export interface DemoSong { id: string; title: string; genre: string; build: () => Song }
@@ -203,5 +209,5 @@ export const demoSongs: DemoSong[] = [
   { id: "sunrise", title: "Sunrise Sequence", genre: "70s synth pop (Jarre style) · 118 BPM", build: sunrise },
   { id: "neon", title: "Neon Heartbeat", genre: "80s pop · 120 BPM", build: neon },
   { id: "basement", title: "Basement Tape", genre: "90s hip hop · 90 BPM, swung", build: basement },
-  { id: "rolling", title: "Rolling Rhodes", genre: "Drum and bass, Rhodes riff · 172 BPM", build: rolling },
+  { id: "velvet", title: "Velvet Rhodes", genre: "Slow groove, Rhodes riff with drums and bass · 78 BPM", build: velvet },
 ];
