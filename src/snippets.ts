@@ -3,7 +3,7 @@ import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
 import { PolySynth } from "./synth/poly";
 import { createEngine, Engine } from "./seq/engine";
 import { defaultMix, defaultSong, patternFrom, Song, SongFx } from "./seq/song";
-import { engineEntries, factoryInstrument } from "./instruments";
+import { drumEntries, engineEntries, factoryInstrument } from "./instruments";
 import { makeSynth } from "./synth/synth";
 import { demos, engineForDemo } from "./seq/demos";
 export { loadSysex } from "./fm6/library";
@@ -197,6 +197,7 @@ export const snippets: Snippet[] = [
     },
   })),
   ...fxDemos(),
+  ...drumDemos(),
 ];
 
 /** The same phrase through each effect: Felucca's reverbs, tempo delay and chorus. */
@@ -234,6 +235,45 @@ function fxDemos(): Snippet[] {
     make("Chorus", { chorus: 90 }, { crate: 30, cdepth: 90 }),
     make("Distortion 60 on ANALOG SAW LEAD", { dist: 60, reverb: 20 }, {}, "ANALOG/SAW LEAD"),
   ];
+}
+
+/** A drum beat on each kit (General MIDI notes: 36 kick, 38 snare, 42 closed hat, 46 open hat, 45 tom) under a bass line. */
+function drumDemos(): Snippet[] {
+  const hit = (...notes: number[]) => ({ notes, gate: 0.5 });
+  const beat = [
+    hit(36, 42), hit(42), hit(42), hit(42), hit(38, 42), hit(42), hit(36, 42), hit(42, 36),
+    hit(36, 42), hit(42), hit(42), hit(42, 36), hit(38, 42), hit(42), hit(38, 46), hit(42, 45),
+  ];
+  beat[4] = hit(38, 42);
+  const bass = [
+    { notes: [36], gate: 1.5 }, null, null, { notes: [36], gate: 0.8 }, null, null, { notes: [39], gate: 0.8 }, null,
+    { notes: [34], gate: 1.5 }, null, null, { notes: [34], gate: 0.8 }, null, { notes: [41], gate: 0.8 }, null, { notes: [39], gate: 0.8 },
+  ];
+  const pat = patternFrom("beat", [beat, bass]);
+  return drumEntries.map((e): Snippet => ({
+    step: "Drums",
+    title: `${e.name} · beat and bass`,
+    render: () => {
+      const song: Song = {
+        bpm: 108, swing: 0.1,
+        tracks: [
+          { patch: e.id, mute: false, ...defaultMix(), reverb: 20 },
+          { patch: "ANALOG/SQR BASS", mute: false, ...defaultMix(), delay: 8, reverb: 8 },
+          { patch: "INIT", mute: true, ...defaultMix() }, { patch: "INIT", mute: true, ...defaultMix() },
+        ],
+        fx: defaultSong().fx,
+        patterns: [pat], arrangement: [0],
+      };
+      const eng = createEngine(SAMPLE_RATE, song, factoryInstrument);
+      const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 8);
+      const out = new Float32Array(body + SAMPLE_RATE * 2);
+      eng.play();
+      render(eng, out, 0, body);
+      eng.stop();
+      render(eng, out, body, out.length - body);
+      return fade(out);
+    },
+  }));
 }
 
 /** Renders into out[pos .. pos+n) in worklet-sized chunks. */

@@ -1,6 +1,7 @@
 // The instrument library: every sound the app can play, with a stable id (the song stores ids).
 //   FM6 voices:      id = the voice name              ("TINE EP")
 //   engine presets:  id = "ENGINE/PRESET"             ("ANALOG/SAW LEAD")
+import { DRUM_PRESETS } from "./drum/drumsynth";
 import { ENGINES } from "./engines/registry";
 import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
 import { Instrument, instrumentFromPreset } from "./synth/synth";
@@ -28,7 +29,11 @@ export const engineEntries: LibraryEntry[] = ENGINES.flatMap((e) =>
   }),
 );
 
-export const factoryEntries: LibraryEntry[] = [...factoryPatches.map(fm6Entry), ...engineEntries];
+export const drumEntries: LibraryEntry[] = DRUM_PRESETS.map((d): LibraryEntry => ({
+  id: `DRUM/${d.name}`, name: d.name, bank: "DRUM", source: "factory", instrument: { kind: "drum", params: [...d.params], fx: [...d.fx] }, note: 36,
+}));
+
+export const factoryEntries: LibraryEntry[] = [...factoryPatches.map(fm6Entry), ...engineEntries, ...drumEntries];
 
 /** The instrument of a factory id (a missing id falls back to the INIT voice). */
 export function factoryInstrument(id: string): Instrument {
@@ -38,7 +43,7 @@ export function factoryInstrument(id: string): Instrument {
 
 const KEY_ENGINES = "websynth.library.engines.v1";
 
-type EngineInstrument = Extract<Instrument, { kind: "engine" }>;
+type EngineInstrument = Extract<Instrument, { kind: "engine" | "drum" }>;
 
 export function userEngineEntry(inst: EngineInstrument, name: string): LibraryEntry {
   return { id: `USER/${name}`, name, bank: "User", source: "user", instrument: inst, note: 60 };
@@ -57,7 +62,7 @@ export function loadUserEngineEntries(): LibraryEntry[] {
 
 export function saveUserEngineEntries(entries: LibraryEntry[]): void {
   try {
-    const list = entries.filter((e) => e.source === "user" && e.instrument.kind === "engine").map((e) => ({ name: e.name, inst: e.instrument }));
+    const list = entries.filter((e) => e.source === "user" && (e.instrument.kind === "engine" || e.instrument.kind === "drum")).map((e) => ({ name: e.name, inst: e.instrument }));
     localStorage.setItem(KEY_ENGINES, JSON.stringify(list));
   } catch {
     // storage unavailable: the library still works for this session

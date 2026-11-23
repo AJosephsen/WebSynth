@@ -16,3 +16,8 @@ src/fm6/factory.ts: the INIT voice and Felucca's 8 factory voices (GPL-3.0-only,
 src/engines/: TypeScript ports of Felucca-Engines (https://github.com/hugelton/Felucca-Engines, MIT, Copyright (C) 2026
 Leo Kuroshita, Hügelton Instruments): the shared DSP helpers and tables (dsp.c, gen_engine_tables.py), the ANALOG
 engine and its host contract. tests/engines-golden.txt is that project's reference output (tests/golden.txt).
+
+src/fx/: TypeScript ports of the effects of Felucca's fx.c (GPL-3.0-only): DIST, chorus, tempo delay, the ROOM,
+SPRING and HALL reverbs and the master limiter. tests/fx-gold.txt is reference output of that code.
+src/drum/: TypeScript ports of Felucca's drum_voice.c and the lane/kit logic of eng_drum.c (GPL-3.0-only).
+tests/drum-gold.txt is reference output of drum_voice.c.

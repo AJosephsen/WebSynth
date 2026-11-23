@@ -131,13 +131,17 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     ($<HTMLInputElement>("sq-swing")).value = String(Math.round(song.swing * 100));
   }
 
+  const DRUM_LANES: Record<number, string> = { 36: "KICK", 37: "RIM", 38: "SNARE", 39: "CLAP", 42: "HAT CL", 45: "TOM", 46: "HAT OP", 56: "BELL" };
+
   function renderRoll(): void {
+    const isDrum = deps.library().find((p) => p.id === song.tracks[track].patch)?.instrument.kind === "drum";
     const len = cur().length;
     const steps = cur().steps[track];
     let html = `<div class="rl" style="--cols:${len}">`;
     for (let r = ROWS - 1; r >= 0; r--) {
       const n = base + r;
-      html += `<div class="lab${isBlack(n) ? " blk" : ""}">${n % 12 === 0 ? noteName(n) : ""}</div>`;
+      const label = isDrum ? DRUM_LANES[n] ?? "" : n % 12 === 0 ? noteName(n) : "";
+      html += `<div class="lab${isBlack(n) ? " blk" : ""}">${label}</div>`;
       for (let s = 0; s < len; s++) {
         const on = steps[s]?.notes.includes(n);
         html += `<div class="c${on ? " on" : ""}${isBlack(n) ? " blk" : ""}${s % 4 === 0 ? " beat" : ""}" data-n="${n}" data-s="${s}"></div>`;
@@ -244,7 +248,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       const id = (el as HTMLSelectElement).value;
       song.tracks[i].patch = id;
       const inst = deps.library().find((p) => p.id === id)?.instrument;
-      if (inst?.kind === "engine" && inst.fx) {
+      if (inst?.kind === "drum") base = 36;
+      if ((inst?.kind === "engine" || inst?.kind === "drum") && inst.fx) {
         // a preset brings its own distortion and sends (as in Felucca)
         const [dist, chorus, delay, reverb] = inst.fx;
         Object.assign(song.tracks[i], { dist, chorus, delay, reverb });

@@ -2,6 +2,7 @@ import { engineById } from "../engines/registry";
 import { Preset } from "../engines/presets";
 import { EnginePoly } from "./enginesynth";
 import { PolySynth } from "./poly";
+import { DrumSynth } from "../drum/drumsynth";
 
 /** Anything the sequencer and the live keyboard can play. */
 export interface Synth {
@@ -17,6 +18,7 @@ export interface Synth {
 /** A playable sound, as it travels between the page and the worklet. */
 export type Instrument =
   | { kind: "fm6"; patch: Uint8Array }
+  | { kind: "drum"; params: number[]; fx?: number[] }
   | { kind: "engine"; engine: string; params: number[]; env: number[]; fenv: number; mono: boolean; ftype?: number; fx?: number[] };
 
 export function instrumentFromPreset(engine: string, p: Preset): Instrument {
@@ -25,6 +27,7 @@ export function instrumentFromPreset(engine: string, p: Preset): Instrument {
 
 export function makeSynth(inst: Instrument, voices = 8): Synth {
   if (inst.kind === "fm6") return new PolySynth(inst.patch, voices);
+  if (inst.kind === "drum") return new DrumSynth(inst.params);
   const e = engineById(inst.engine);
   if (!e) throw new Error(`unknown engine ${inst.engine}`);
   return new EnginePoly(e.def, inst, inst.mono ? 1 : voices);
