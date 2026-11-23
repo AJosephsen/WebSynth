@@ -10,7 +10,7 @@ export const FP = {
 const OPMAX = [99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 3, 3, 7, 3, 7, 99, 1, 31, 99, 14];
 const VMAX = [99, 99, 99, 99, 99, 99, 99, 99, 31, 7, 1, 99, 99, 99, 99, 1, 5, 7, 48];
 
-function max(i: number): number {
+export function maxValue(i: number): number {
   if (i < 126) return OPMAX[i % 21];
   if (i < FP.NAME) return VMAX[i - 126];
   return 126;
@@ -19,7 +19,7 @@ function max(i: number): number {
 function sanitize(v: Uint8Array): void {
   for (let i = 0; i < FP.SIZE; i++) {
     if (i >= FP.NAME) v[i] = v[i] < 32 || v[i] > 126 ? 32 : v[i];
-    else if (v[i] > max(i)) v[i] = max(i);
+    else if (v[i] > maxValue(i)) v[i] = maxValue(i);
   }
 }
 

@@ -1,6 +1,8 @@
 import workletUrl from "./worklet/processor.ts?worker&url";
 import { mountSequencer } from "./ui/sequencer";
-import { exportBank, factoryPatches, LibraryPatch, loadSysex, loadUserPatches, saveUserPatches } from "./fm6/library";
+import { mountPatchEditor } from "./ui/patcheditor";
+import { patchName } from "./fm6/patch";
+import { exportBank, factoryPatches, LibraryPatch, loadSysex, loadUserPatches, saveUserPatches, toLibraryPatch } from "./fm6/library";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -18,6 +20,7 @@ app.innerHTML = `
       <button id="delete">Delete user patch</button>
     </div>
   </section>
+  <section><h2>Patch editor</h2><div id="pe"></div></section>
   <section><h2>Sequencer</h2><div id="seq"></div></section>`;
 
 const $ = <T extends HTMLElement>(id: string) => app.querySelector<T>("#" + id)!;
@@ -40,6 +43,7 @@ function fillSelect(): void {
 }
 function choose(p: LibraryPatch): void {
   current = p;
+  editor.load(p);
   node?.port.postMessage({ type: "patch", patch: p.patch });
 }
 fillSelect();
@@ -71,6 +75,30 @@ $<HTMLButtonElement>("delete").onclick = () => {
   seq.refreshLibrary();
   choose(current);
 };
+
+// ---- patch editor ----
+const editor = mountPatchEditor($("pe"), {
+  onChange: (patch) => node?.port.postMessage({ type: "patch", patch }),
+  saveNew: (patch) => {
+    const lp = toLibraryPatch(patch, "user");
+    library = [...library, lp];
+    saveUserPatches(library);
+    fillSelectFor(lp);
+  },
+  overwrite: (target, patch) => {
+    target.patch = patch;
+    target.name = patchName(patch);
+    saveUserPatches(library);
+    fillSelectFor(target);
+  },
+});
+function fillSelectFor(p: LibraryPatch): void {
+  current = p;
+  fillSelect();
+  seq.refreshLibrary();
+  choose(p);
+}
+editor.load(current);
 
 // ---- sequencer ----
 const seq = mountSequencer($("seq"), { library: () => library, send: (m) => node?.port.postMessage(m) });

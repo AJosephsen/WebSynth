@@ -135,5 +135,15 @@ eng.setSong(defaultSong());
 for (let i = 0; i < 20; i++) eng.render(chunk);
 check(sanitizeSong({}) === null && sanitizeSong(JSON.parse(JSON.stringify(defaultSong())))?.patterns.length === 4, "song sanitize");
 eng.stop();
+// algorithm graphs decoded from the table match the DX7 diagrams
+import { algoGraph, envPoints } from "../src/ui/algo";
+const has = (g: ReturnType<typeof algoGraph>, a: number, b: number) => g.edges.some(([x, y]) => x === a && y === b);
+const g1 = algoGraph(1), g5 = algoGraph(5), g22 = algoGraph(22), g32 = algoGraph(32);
+check(g1.carriers.join() === "1,3" && has(g1, 2, 1) && has(g1, 6, 5) && has(g1, 5, 4) && has(g1, 4, 3) && g1.feedback === 6, "algorithm 1 graph");
+check(g5.carriers.join() === "1,3,5" && has(g5, 2, 1) && has(g5, 4, 3) && has(g5, 6, 5) && g5.edges.length === 3, "algorithm 5 graph");
+check(g22.carriers.join() === "1,3,4,5" && has(g22, 6, 3) && has(g22, 6, 4) && has(g22, 6, 5) && has(g22, 2, 1), "algorithm 22 graph");
+check(g32.carriers.length === 6 && g32.edges.length === 0, "algorithm 32 graph");
+check(g1.level[6] === 3 && g1.level[3] === 0, "algorithm 1 stack depth");
+check(envPoints([99, 50, 50, 50], [99, 75, 0, 0], 200, 70).split(" ").length === 6, "envelope polyline");
 console.log(bad3 ? `FAIL ${bad3}` : "OK formats, polyphony, sequencer");
 process.exit(bad2 + bad3 ? 1 : 0);

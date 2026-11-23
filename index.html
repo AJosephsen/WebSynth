@@ -23,6 +23,14 @@
       .c.on { background: var(--accent); } .c.play, .v.play, .g.play { outline: 1px solid var(--accent); filter: brightness(1.25); }
       .v { height: 36px; background: var(--cell); position: relative; cursor: pointer; } .v i { position: absolute; bottom: 0; left: 2px; right: 2px; background: var(--accent); opacity: .7; }
       .g { height: 18px; font-size: 10px; text-align: center; background: var(--cell); cursor: pointer; }
+      .pe-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; } .pe-top .src { opacity: .7; }
+      .pe-grid { display: grid; grid-template-columns: minmax(250px, 320px) 1fr; gap: 16px; } @media (max-width: 760px) { .pe-grid { grid-template-columns: 1fr; } }
+      .pe-grid h4 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; opacity: .75; }
+      .prm { display: grid; grid-template-columns: 96px 1fr 64px; gap: 6px; align-items: center; margin: 2px 0; } .prm input[type=range] { padding: 0; min-width: 0; } .prm output { font-variant-numeric: tabular-nums; font-size: 12px; }
+      .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; } @media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
+      .optabs { display: flex; flex-wrap: wrap; gap: 6px; } .optab { display: flex; flex-direction: column; align-items: flex-start; } .optab small { opacity: .7; font-size: 11px; } .optab.sel { outline: 2px solid var(--accent); }
+      svg.algo { width: 100%; max-width: 260px; color: var(--fg); } svg.algo circle { fill: var(--panel); stroke: currentColor; stroke-width: 1.5; } svg.algo .car circle { fill: var(--accent); } svg.algo .car text { fill: var(--bg); } svg.algo text { fill: currentColor; font-size: 12px; } svg.algo .sel circle { stroke-width: 3; } svg.algo g { cursor: pointer; }
+      svg.env { width: 100%; max-width: 260px; height: 70px; color: var(--accent); background: var(--cell); border-radius: 4px; }
     </style>
   </head>
   <body>
