@@ -32,6 +32,13 @@
       .module h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 3px; } .module h4 small { text-transform: none; letter-spacing: 0; opacity: .6; }
       .knobs { display: flex; flex-wrap: wrap; gap: 8px 10px; } .kc { display: flex; flex-direction: column; align-items: center; width: 74px; font-size: 11px; text-align: center; gap: 1px; } .kc span { opacity: .8; line-height: 1.15; min-height: 26px; display: flex; align-items: flex-end; } .kc output { font-family: ui-monospace, Menlo, monospace; font-size: 11px; } .kc select { max-width: 74px; font-size: 11px; padding: 2px; }
       .algo-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; } .algo-row svg.algo { max-width: 240px; flex: 0 1 240px; } .module svg.env { display: block; margin-bottom: 6px; max-width: 100%; }
+      .tp { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; } .playbtn { min-width: 96px; height: 44px; font-size: 15px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; border-radius: 22px; background: var(--accent); color: var(--bg); border-color: var(--accent); } .playbtn:disabled { background: var(--cell); color: var(--fg); }
+      .tpfile { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; font-size: 12px; }
+      #sq-tracks.seq-tracks { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 10px; align-items: start; }
+      .seq-tracks .trk { background: var(--panel); padding: 8px; } .trk .mix { justify-content: center; } .trk .mix .kc { width: 64px; } .trk .kc.wideSel { width: auto; }
+      .led { width: 10px; height: 10px; justify-self: center; margin: 3px 0; border-radius: 50%; background: var(--cell); border: 1px solid var(--line); } .led.beat { background: var(--blk); border-color: var(--fg); opacity: .8; } .led.play { background: #ff4a3d; border-color: #ff4a3d; box-shadow: 0 0 6px #ff4a3d; outline: none; filter: none; opacity: 1; }
+      details.module.fxp { margin: 10px 0; } details.module.fxp > summary { color: var(--accent); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; }
+      .tab > div > .module, #seq > .module { margin-bottom: 10px; }
       h1, h2, h3 { margin: 12px 0 6px; } section { margin-bottom: 24px; }
       button, select, input { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
       button { cursor: pointer; } button:disabled { opacity: .5; cursor: default; }

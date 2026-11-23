@@ -53,35 +53,42 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   const modOpen = new Set<number>();
 
   root.innerHTML = `
-    <div class="seq-bar">
-      <button id="sq-play" disabled>Play</button>
-      <select id="sq-mode"><option value="song">Song</option><option value="pattern">Pattern loop</option></select>
-      <label>BPM <input id="sq-bpm" type="number" min="40" max="240"></label>
-      <label>Swing <input id="sq-swing" type="range" min="0" max="50"></label>
-      <button id="sq-export">Export song</button>
-      <label class="file">Import song <input id="sq-import" type="file" accept=".json"></label>
-      <button id="sq-reset">Reset to demo song</button>
-    </div>
-    <div id="sq-tracks" class="seq-tracks"></div>
-    <details class="fxp"><summary>Effects</summary><div id="sq-fx" class="seq-bar"></div></details>
-    <div class="seq-bar" id="sq-patbar"></div>
-    <div class="seq-bar">
-      <label>Name <input id="sq-name" maxlength="16"></label>
-      <label>Length <select id="sq-len"><option>8</option><option>16</option><option>24</option><option>32</option></select></label>
-      <button id="sq-add">New pattern</button>
-      <button id="sq-dup">Duplicate</button>
-      <button id="sq-clear">Clear track</button>
-      <button id="sq-del">Delete</button>
-      <button id="sq-oct-d">Octave −</button><button id="sq-oct-u">Octave +</button>
-    </div>
-    <div class="roll-wrap"><div id="sq-roll" class="roll"></div></div>
-    <h3>Pattern sequencer</h3>
-    <div class="seq-bar"><span id="sq-arr" class="arr"></span></div>
-    <div class="seq-bar">
-      <button id="sq-arr-add">Append selected pattern</button>
-      <button id="sq-arr-left">◀ Move</button><button id="sq-arr-right">Move ▶</button>
-      <button id="sq-arr-del">Remove</button>
-    </div>`;
+    <section class="module transport"><h4>Transport</h4>
+      <div class="tp">
+        <button id="sq-play" class="playbtn" disabled>Play</button>
+        <label class="kc"><span>Mode</span><select id="sq-mode"><option value="song">Song</option><option value="pattern">Pattern loop</option></select></label>
+        <label class="kc"><span>Tempo</span><input id="sq-bpm" type="range" min="40" max="240"><output id="sq-bpmo"></output></label>
+        <label class="kc"><span>Swing</span><input id="sq-swing" type="range" min="0" max="50"><output id="sq-swingo"></output></label>
+        <div class="tpfile">
+          <button id="sq-export">Export song</button>
+          <label class="file">Import song <input id="sq-import" type="file" accept=".json"></label>
+          <button id="sq-reset">Reset to demo song</button>
+        </div>
+      </div>
+    </section>
+    <section class="module"><h4>Channels</h4><div id="sq-tracks" class="seq-tracks"></div></section>
+    <details class="fxp module"><summary>Master effects</summary><div id="sq-fx" class="knobs"></div></details>
+    <section class="module"><h4>Patterns</h4>
+      <div class="seq-bar" id="sq-patbar"></div>
+      <div class="seq-bar">
+        <label>Name <input id="sq-name" maxlength="16"></label>
+        <label>Length <select id="sq-len"><option>8</option><option>16</option><option>24</option><option>32</option></select></label>
+        <button id="sq-add">New pattern</button>
+        <button id="sq-dup">Duplicate</button>
+        <button id="sq-clear">Clear track</button>
+        <button id="sq-del">Delete</button>
+        <button id="sq-oct-d">Octave −</button><button id="sq-oct-u">Octave +</button>
+      </div>
+      <div class="roll-wrap"><div id="sq-roll" class="roll"></div></div>
+    </section>
+    <section class="module"><h4>Pattern sequencer</h4>
+      <div class="seq-bar"><span id="sq-arr" class="arr"></span></div>
+      <div class="seq-bar">
+        <button id="sq-arr-add">Append selected pattern</button>
+        <button id="sq-arr-left">◀ Move</button><button id="sq-arr-right">Move ▶</button>
+        <button id="sq-arr-del">Remove</button>
+      </div>
+    </section>`;
 
   const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>("#" + id)!;
 
@@ -120,11 +127,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
           <button data-act="sel">Track ${i + 1}</button>
           <select data-act="patch">${opts}</select>
           <button data-act="mute" class="${t.mute ? "off" : ""}">${t.mute ? "Muted" : "Mute"}</button>
-          <div class="mix">${MIX_KEYS.map(([k, label, lo, hi]) => `<label>${label}<input type="range" data-mix="${k}" min="${lo}" max="${hi}" value="${t[k]}"></label>`).join("")}</div>
-          <div class="mix ins"><label>Insert<select data-mix="itype">${INSERT_NAMES.map((n, k) => `<option value="${k}"${t.itype === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>${
+          <div class="mix">${MIX_KEYS.map(([k, label, lo, hi]) => `<label class="kc"><span>${label}</span><input type="range" data-mix="${k}" min="${lo}" max="${hi}" value="${t[k]}"></label>`).join("")}</div>
+          <div class="mix ins"><label class="kc wideSel"><span>Insert</span><select data-mix="itype">${INSERT_NAMES.map((n, k) => `<option value="${k}"${t.itype === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>${
             t.itype
-              ? `<label>Mix<input type="range" data-mix="imix" min="0" max="127" value="${t.imix}"></label>` +
-                (["ia", "ib", "ic"] as const).map((k, n) => `<label>${insertLabels(t.itype)[n]}<input type="range" data-mix="${k}" min="0" max="127" value="${t[k]}"></label>`).join("")
+              ? `<label class="kc"><span>Mix</span><input type="range" data-mix="imix" min="0" max="127" value="${t.imix}"></label>` +
+                (["ia", "ib", "ic"] as const).map((k, n) => `<label class="kc"><span>${insertLabels(t.itype)[n]}</span><input type="range" data-mix="${k}" min="0" max="127" value="${t[k]}"></label>`).join("")
               : ""
           }</div>${modSection(t, i, lib)}</div>`;
       })
@@ -133,11 +140,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
 
   function renderFx(): void {
     const f = song.fx;
-    const sl = (k: keyof typeof f, label: string, lo: number, hi: number) => `<label>${label}<input type="range" data-fx="${k}" min="${lo}" max="${hi}" value="${f[k]}"></label>`;
+    const sl = (k: keyof typeof f, label: string, lo: number, hi: number) => `<label class="kc"><span>${label}</span><input type="range" data-fx="${k}" min="${lo}" max="${hi}" value="${f[k]}"></label>`;
     $("sq-fx").innerHTML = `
-      <label>Delay time <select data-fx="dtime">${DTIME_NAMES.map((n, i) => `<option value="${i}"${f.dtime === i ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="kc"><span>Delay time</span><select data-fx="dtime">${DTIME_NAMES.map((n, i) => `<option value="${i}"${f.dtime === i ? " selected" : ""}>${n}</option>`).join("")}</select></label>
       ${sl("dfdbk", "Feedback", 0, 120)}${sl("dcolor", "Color", 0, 127)}${sl("dmix", "Delay mix", 0, 127)}
-      <label>Reverb <select data-fx="rtype">${RTYPE_NAMES.map((n, i) => `<option value="${i}"${f.rtype === i ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="kc"><span>Reverb</span><select data-fx="rtype">${RTYPE_NAMES.map((n, i) => `<option value="${i}"${f.rtype === i ? " selected" : ""}>${n}</option>`).join("")}</select></label>
       ${sl("rsize", "Size", 0, 127)}${sl("rdamp", "Damp", 0, 127)}${sl("crate", "Chorus rate", 0, 127)}${sl("cdepth", "Chorus depth", 0, 127)}`;
   }
 
@@ -147,7 +154,9 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     ($<HTMLInputElement>("sq-name")).value = cur().name;
     ($<HTMLSelectElement>("sq-len")).value = String(cur().length);
     ($<HTMLInputElement>("sq-bpm")).value = String(song.bpm);
+    $("sq-bpmo").textContent = String(Math.round(song.bpm));
     ($<HTMLInputElement>("sq-swing")).value = String(Math.round(song.swing * 100));
+    $("sq-swingo").textContent = `${Math.round(song.swing * 100)}%`;
   }
 
   const DRUM_LANES: Record<number, string> = { 36: "KICK", 37: "RIM", 38: "SNARE", 39: "CLAP", 42: "HAT CL", 45: "TOM", 46: "HAT OP", 56: "BELL" };
@@ -157,6 +166,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const len = cur().length;
     const steps = cur().steps[track];
     let html = `<div class="rl" style="--cols:${len}">`;
+    html += `<div class="lab small">step</div>`;
+    for (let s = 0; s < len; s++) html += `<div class="led${s % 4 === 0 ? " beat" : ""}" data-s="${s}"></div>`;
     for (let r = ROWS - 1; r >= 0; r--) {
       const n = base + r;
       const label = isDrum ? DRUM_LANES[n] ?? "" : n % 12 === 0 ? noteName(n) : "";
@@ -316,8 +327,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     mode = (e.target as HTMLSelectElement).value as "pattern" | "song";
     deps.send({ type: "mode", mode, pattern: pat });
   };
-  ($<HTMLInputElement>("sq-bpm")).onchange = (e) => { song.bpm = Math.min(240, Math.max(40, Number((e.target as HTMLInputElement).value) || 104)); commit(); };
-  ($<HTMLInputElement>("sq-swing")).oninput = (e) => { song.swing = Number((e.target as HTMLInputElement).value) / 100; commit(); };
+  ($<HTMLInputElement>("sq-bpm")).oninput = (e) => { song.bpm = Math.min(240, Math.max(40, Number((e.target as HTMLInputElement).value) || 104)); $("sq-bpmo").textContent = String(song.bpm); commit(); };
+  ($<HTMLInputElement>("sq-swing")).oninput = (e) => { song.swing = Number((e.target as HTMLInputElement).value) / 100; $("sq-swingo").textContent = `${Math.round(song.swing * 100)}%`; commit(); };
   ($<HTMLInputElement>("sq-name")).onchange = (e) => { cur().name = (e.target as HTMLInputElement).value || "Pattern"; commit(); renderPatterns(); renderArr(); };
   ($<HTMLSelectElement>("sq-len")).onchange = (e) => { cur().length = Number((e.target as HTMLSelectElement).value); commit(); renderRoll(); };
   $("sq-add").onclick = () => {
