@@ -170,7 +170,7 @@ async function connectMidi(): Promise<void> {
 startBtn.onclick = async () => {
   const ctx = new AudioContext();
   await ctx.audioWorklet.addModule(workletUrl);
-  node = new AudioWorkletNode(ctx, "synth");
+  node = new AudioWorkletNode(ctx, "synth", { outputChannelCount: [2] });
   node.connect(ctx.destination);
   choose(current);
   node.port.onmessage = (e) => seq.onMessage(e.data);

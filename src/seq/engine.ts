@@ -1,5 +1,8 @@
+import { clamp, mulq15 } from "../engines/dsp";
+import { CTL } from "../engines/types";
+import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
-import { MAX_STEPS, Pattern, Song, Step, TRACKS } from "./song";
+import { MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
 
 interface PendingOff {
   frames: number;
@@ -12,18 +15,28 @@ export interface EngineTrack {
   mute: boolean;
 }
 
+/** Felucca's LEVEL_Q12: 0 = off, else dB = (v - 112) / 2 (112 = 0 dB). */
+const LEVEL_Q12 = Array.from({ length: 128 }, (_, v) => (v ? Math.round(4096 * 10 ** ((v - 112) / 2 / 20)) : 0));
+
+/** The live keyboard's place in the mix. */
+const LIVE_MIX: MixSetup = { ...defaultMix(), reverb: 25 };
+
 /**
- * Sample-accurate pattern/song sequencer plus the synths it plays. Steps are 16th notes.
+ * Sample-accurate pattern/song sequencer plus the synths it plays, mixed through Felucca's effects (per-track
+ * distortion, level and pan, chorus / delay / reverb sends, master limiter). Steps are 16th notes.
  * "pattern" mode loops one pattern; "song" mode follows the arrangement (the pattern sequencer).
- * The same code runs in the AudioWorklet and offline (for the snippets).
+ * The same code runs in the AudioWorklet and offline (for the snippets). Audio is produced in blocks of CTL (32)
+ * samples and handed out through a small FIFO, so any buffer size works.
  */
 export class Engine {
   tracks: EngineTrack[] = [];
   live: Synth;
+  liveMix: MixSetup = { ...LIVE_MIX };
   song: Song;
   mode: "pattern" | "song" = "song";
   patternIndex = 0; // the pattern that loops in pattern mode
-  master = 0.6; // pre-limiter gain; the output is soft-limited with tanh
+  /** Master volume, Q12 (4096 = 1.0). */
+  masterQ12 = 3072;
   playing = false;
   stepIndex = 0; // steps fired since play()
   stepInPattern = 0;
@@ -32,18 +45,46 @@ export class Engine {
   onStep?: (pattern: number, step: number, arrPos: number) => void;
   private framesToStep = 0;
   private pending: PendingOff[] = [];
+  // effects
+  private bus = new FxBus();
+  private master = new Master();
+  private dists: Dist[] = [];
+  private fxs: FxSettings;
+  // output FIFO
+  private fifoL = new Float32Array(CTL);
+  private fifoR = new Float32Array(CTL);
+  private fifoPos = CTL;
+  // block scratch
+  private tbuf: Float32Array[] = [];
+  private ibuf = new Int32Array(CTL);
+  private sendC = new Int32Array(CTL);
+  private sendD = new Int32Array(CTL);
+  private sendR = new Int32Array(CTL);
+  private wet = new Int32Array(CTL);
+  private mixL = new Int32Array(CTL);
+  private mixR = new Int32Array(CTL);
 
   constructor(private readonly sampleRate: number, live: Synth, song: Song) {
     this.live = live;
     this.song = song;
+    this.fxs = this.makeFx(song);
   }
 
   get bpm(): number { return this.song.bpm; }
+
+  private makeFx(song: Song): FxSettings {
+    return { bpm: song.bpm, ...song.fx };
+  }
 
   addTrack(synth: Synth): EngineTrack {
     const t = { synth, mute: false };
     this.tracks.push(t);
     return t;
+  }
+
+  /** ECHO THROW: more delay feedback while held (0..1). */
+  setEchoThrow(amount: number): void {
+    this.bus.throwAmount = Math.round(clamp(amount, 0, 1) * 32768);
   }
 
   /** Swaps the synth of a track (or the live synth, track -1) for a new instrument. */
@@ -60,6 +101,7 @@ export class Engine {
   /** Replaces the song while it plays; the position stays valid. */
   setSong(song: Song): void {
     this.song = song;
+    this.fxs = this.makeFx(song);
     this.patternIndex = Math.min(this.patternIndex, song.patterns.length - 1);
     this.arrPos = Math.min(this.arrPos, song.arrangement.length - 1);
     const len = this.currentPattern().length;
@@ -115,24 +157,89 @@ export class Engine {
     }
   }
 
-  /** Mixes `out.length` samples into out, which must start silent. */
-  render(out: Float32Array): void {
+  /** Renders the synths of one CTL block into per-source float buffers (tracks, then the live keyboard). */
+  private renderSources(): void {
+    const sources = this.tracks.length + 1;
+    while (this.tbuf.length < sources) this.tbuf.push(new Float32Array(CTL));
+    for (let i = 0; i < sources; i++) this.tbuf[i].fill(0);
+    const live = this.tbuf[this.tracks.length];
     let pos = 0;
-    while (pos < out.length) {
+    while (pos < CTL) {
       if (this.playing && this.framesToStep <= 0) this.fireStep();
-      let n = out.length - pos;
+      let n = CTL - pos;
       if (this.playing) n = Math.min(n, this.framesToStep);
       for (const p of this.pending) n = Math.min(n, p.frames);
       n = Math.max(1, n);
-      this.live.render(out, pos, n);
-      for (const t of this.tracks) t.synth.render(out, pos, n);
+      this.live.render(live, pos, n);
+      this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], pos, n));
       pos += n;
       if (this.playing) this.framesToStep -= n;
       for (const p of this.pending) p.frames -= n;
       for (const p of this.pending) if (p.frames <= 0) for (const note of p.notes) p.synth.noteOff(note);
       this.pending = this.pending.filter((p) => p.frames > 0);
     }
-    for (let i = 0; i < out.length; i++) out[i] = Math.tanh(out[i] * this.master);
+  }
+
+  /** One source into the dry mix and the sends (fx.c mix_part). */
+  private mixSource(src: Float32Array, index: number, m: MixSetup): void {
+    const b = this.ibuf;
+    for (let i = 0; i < CTL; i++) b[i] = Math.round(src[i] * 32768);
+    (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
+    const lvl = LEVEL_Q12[m.level & 127];
+    const pan = m.pan;
+    const gl = 4096 - (pan > 0 ? pan * 64 : 0);
+    const gr = 4096 + (pan < 0 ? pan * 64 : 0);
+    const c = m.chorus * 258, d = m.delay * 258, r = m.reverb * 258;
+    const mx = Math.max(c, d, r);
+    const xmax = Math.floor(0x7fffffff / (mx | 1));
+    for (let i = 0; i < CTL; i++) {
+      const x = Math.imul(b[i] >> 2, lvl) >> 10;
+      const xs = clamp(x, -xmax, xmax);
+      if (c) this.sendC[i] += mulq15(xs, c);
+      if (d) this.sendD[i] += mulq15(xs, d);
+      if (r) this.sendR[i] += mulq15(xs, r);
+      this.mixL[i] += Math.imul(x, gl) >> 12;
+      this.mixR[i] += Math.imul(x, gr) >> 12;
+    }
+  }
+
+  private produceBlock(): void {
+    this.renderSources();
+    this.sendC.fill(0); this.sendD.fill(0); this.sendR.fill(0); this.mixL.fill(0); this.mixR.fill(0);
+    this.tracks.forEach((t, i) => {
+      const setup = this.song.tracks[i];
+      this.mixSource(this.tbuf[i], i, setup ?? defaultMix());
+      void t;
+    });
+    this.mixSource(this.tbuf[this.tracks.length], this.tracks.length, this.liveMix);
+    this.bus.process(this.fxs, this.sendC, this.sendD, this.sendR, this.wet, CTL);
+    if (this.bus.side) this.bus.sideMix(this.mixL, this.mixR, CTL);
+    const mg = this.masterQ12;
+    for (let i = 0; i < CTL; i++) {
+      const l = Math.imul((this.mixL[i] + this.wet[i]) >> 2, mg) >> 10;
+      const r = Math.imul((this.mixR[i] + this.wet[i]) >> 2, mg) >> 10;
+      const [ol, or] = this.master.process(l, r);
+      this.fifoL[i] = ol / 32768;
+      this.fifoR[i] = or / 32768;
+    }
+    this.fifoPos = 0;
+  }
+
+  /** Renders stereo audio (overwrites l and r). */
+  renderStereo(l: Float32Array, r: Float32Array): void {
+    for (let i = 0; i < l.length; i++) {
+      if (this.fifoPos >= CTL) this.produceBlock();
+      l[i] = this.fifoL[this.fifoPos];
+      r[i] = this.fifoR[this.fifoPos];
+      this.fifoPos++;
+    }
+  }
+
+  /** Renders a mono mixdown ((L + R) / 2) into out, which must start silent. */
+  render(out: Float32Array): void {
+    const r = new Float32Array(out.length);
+    this.renderStereo(out, r);
+    for (let i = 0; i < out.length; i++) out[i] = (out[i] + r[i]) / 2;
   }
 }
 

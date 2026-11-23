@@ -2,7 +2,7 @@ import { Operator } from "./dsp/operator";
 import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
 import { PolySynth } from "./synth/poly";
 import { createEngine, Engine } from "./seq/engine";
-import { defaultSong } from "./seq/song";
+import { defaultMix, defaultSong, patternFrom, Song, SongFx } from "./seq/song";
 import { engineEntries, factoryInstrument } from "./instruments";
 import { makeSynth } from "./synth/synth";
 import { demos, engineForDemo } from "./seq/demos";
@@ -196,7 +196,45 @@ export const snippets: Snippet[] = [
       return fade(out);
     },
   })),
+  ...fxDemos(),
 ];
+
+/** The same phrase through each effect: Felucca's reverbs, tempo delay and chorus. */
+function fxDemos(): Snippet[] {
+  const n = (...notes: number[]) => ({ notes });
+  const phrase = patternFrom("fx", [[
+    n(60), null, n(64), null, n(67), null, n(72), null, n(71), null, n(67), null, { notes: [64, 67, 71], gate: 3 }, null, null, null,
+  ]]);
+  const make = (label: string, mix: Partial<ReturnType<typeof defaultMix>>, fx: Partial<SongFx>, engine = "TINE EP"): Snippet => ({
+    step: "Effects",
+    title: label,
+    render: () => {
+      const song: Song = {
+        bpm: 100, swing: 0,
+        tracks: [{ patch: engine, mute: false, ...defaultMix(), ...mix }, ...[1, 2, 3].map(() => ({ patch: "INIT", mute: true, ...defaultMix() }))],
+        fx: { ...defaultSong().fx, ...fx },
+        patterns: [phrase], arrangement: [0],
+      };
+      const e = createEngine(SAMPLE_RATE, song, factoryInstrument);
+      const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 8);
+      const out = new Float32Array(body + SAMPLE_RATE * 4);
+      e.play();
+      render(e, out, 0, body);
+      e.stop();
+      render(e, out, body, out.length - body);
+      return fade(out);
+    },
+  });
+  return [
+    make("Dry (no sends)", {}, {}),
+    make("Reverb · ROOM", { reverb: 70 }, { rtype: 0 }),
+    make("Reverb · HALL", { reverb: 70 }, { rtype: 2 }),
+    make("Reverb · SPRING", { reverb: 70 }, { rtype: 1 }),
+    make("Tempo delay · 1/8 dotted, feedback 70", { delay: 80 }, { dtime: 10, dfdbk: 70, dmix: 100 }),
+    make("Chorus", { chorus: 90 }, { crate: 30, cdepth: 90 }),
+    make("Distortion 60 on ANALOG SAW LEAD", { dist: 60, reverb: 20 }, {}, "ANALOG/SAW LEAD"),
+  ];
+}
 
 /** Renders into out[pos .. pos+n) in worklet-sized chunks. */
 function render(e: Engine, out: Float32Array, pos: number, n: number): void {

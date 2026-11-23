@@ -10,15 +10,35 @@ export interface Pattern {
   steps: Step[][]; // [track][step], each MAX_STEPS long
 }
 
-export interface TrackSetup {
+/** A track's place in the mix: level, pan and the sends (Felucca's P_LEVEL, P_PAN, P_DIST, P_CHOR, P_DLY, P_REV). */
+export interface MixSetup {
+  level: number; // 0..127, 112 = 0 dB
+  pan: number; // -64..63
+  dist: number; // 0..127 per-track distortion
+  chorus: number; // 0..127 sends
+  delay: number;
+  reverb: number;
+}
+
+export interface TrackSetup extends MixSetup {
   patch: string; // instrument id (see instruments.ts); kept by name so a song survives a library change
   mute: boolean;
 }
+
+export const defaultMix = (): MixSetup => ({ level: 112, pan: 0, dist: 0, chorus: 0, delay: 0, reverb: 0 });
+
+/** The global effect settings of a song (the bpm is the song's). */
+export interface SongFx {
+  dtime: number; dfdbk: number; dcolor: number; dmix: number;
+  rtype: number; rsize: number; rdamp: number; crate: number; cdepth: number;
+}
+export const defaultSongFx = (): SongFx => ({ dtime: 1, dfdbk: 60, dcolor: 70, dmix: 90, rtype: 2, rsize: 90, rdamp: 60, crate: 40, cdepth: 60 });
 
 export interface Song {
   bpm: number;
   swing: number; // 0..0.5
   tracks: TrackSetup[];
+  fx: SongFx;
   patterns: Pattern[]; // up to 16
   arrangement: number[]; // pattern indices, played in order (the pattern sequencer)
 }
@@ -63,11 +83,30 @@ export function sanitizeSong(raw: unknown): Song | null {
   const arrangement = (Array.isArray(s.arrangement) ? s.arrangement : [0])
     .map((i) => Math.round(clamp(i, 0, patterns.length - 1, 0)))
     .slice(0, MAX_ARRANGEMENT);
-  const tracks = Array.from({ length: TRACKS }, (_, i) => ({
-    patch: typeof s.tracks?.[i]?.patch === "string" ? s.tracks[i].patch : "INIT",
-    mute: !!s.tracks?.[i]?.mute,
-  }));
-  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, patterns, arrangement: arrangement.length ? arrangement : [0] };
+  const tracks = Array.from({ length: TRACKS }, (_, i): TrackSetup => {
+    const t = s.tracks?.[i];
+    const d = defaultMix();
+    return {
+      patch: typeof t?.patch === "string" ? t.patch : "INIT",
+      mute: !!t?.mute,
+      level: Math.round(clamp(t?.level, 0, 127, d.level)),
+      pan: Math.round(clamp(t?.pan, -64, 63, d.pan)),
+      dist: Math.round(clamp(t?.dist, 0, 127, d.dist)),
+      chorus: Math.round(clamp(t?.chorus, 0, 127, d.chorus)),
+      delay: Math.round(clamp(t?.delay, 0, 127, d.delay)),
+      reverb: Math.round(clamp(t?.reverb, 0, 127, d.reverb)),
+    };
+  });
+  const f = (s.fx ?? {}) as Partial<SongFx>;
+  const df = defaultSongFx();
+  const fx: SongFx = {
+    dtime: Math.round(clamp(f.dtime, 0, 12, df.dtime)), dfdbk: Math.round(clamp(f.dfdbk, 0, 120, df.dfdbk)),
+    dcolor: Math.round(clamp(f.dcolor, 0, 127, df.dcolor)), dmix: Math.round(clamp(f.dmix, 0, 127, df.dmix)),
+    rtype: Math.round(clamp(f.rtype, 0, 2, df.rtype)), rsize: Math.round(clamp(f.rsize, 0, 127, df.rsize)),
+    rdamp: Math.round(clamp(f.rdamp, 0, 127, df.rdamp)), crate: Math.round(clamp(f.crate, 0, 127, df.crate)),
+    cdepth: Math.round(clamp(f.cdepth, 0, 127, df.cdepth)),
+  };
+  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arrangement.length ? arrangement : [0] };
 }
 
 /** The song the app starts with. */
@@ -97,7 +136,13 @@ export function defaultSong(): Song {
   return {
     bpm: 104,
     swing: 0.12,
-    tracks: [{ patch: "FM BASS", mute: false }, { patch: "TINE EP", mute: false }, { patch: "MARIMBA", mute: false }, { patch: "WARM PAD", mute: false }],
+    tracks: [
+      { patch: "FM BASS", mute: false, ...defaultMix(), delay: 10, reverb: 10 },
+      { patch: "TINE EP", mute: false, ...defaultMix(), chorus: 30, delay: 25, reverb: 40, pan: -10 },
+      { patch: "MARIMBA", mute: false, ...defaultMix(), delay: 30, reverb: 30, pan: 14 },
+      { patch: "WARM PAD", mute: false, ...defaultMix(), chorus: 60, delay: 20, reverb: 70 },
+    ],
+    fx: defaultSongFx(),
     patterns: [groove, turn, breakdown, emptyPattern("D empty")],
     arrangement: [2, 0, 0, 1, 0],
   };

@@ -1,6 +1,6 @@
 import { Engine, createEngine } from "./engine";
 import { factoryInstrument } from "../instruments";
-import { patternFrom, Song, Step, TRACKS } from "./song";
+import { defaultMix, defaultSongFx, patternFrom, Song, Step, TRACKS } from "./song";
 
 const n = (...notes: number[]): Step => ({ notes });
 const _ = null;
@@ -91,7 +91,8 @@ export function demoSong(d: Demo): Song {
   return {
     bpm: d.bpm,
     swing: d.swing,
-    tracks: tracks.map((t, i) => ({ patch: t.patch, mute: i >= d.tracks.length })),
+    tracks: tracks.map((t, i) => ({ patch: t.patch, mute: i >= d.tracks.length, ...defaultMix(), reverb: 25, delay: 15 })),
+    fx: defaultSongFx(),
     patterns: [patternFrom(d.name, tracks.map((t) => t.steps))],
     arrangement: [0],
   };

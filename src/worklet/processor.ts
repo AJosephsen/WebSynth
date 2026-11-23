@@ -48,10 +48,11 @@ class SynthProcessor extends AudioWorkletProcessor {
     };
   }
 
+  private spare = new Float32Array(128);
+
   process(_in: Float32Array[][], outputs: Float32Array[][]): boolean {
-    const out = outputs[0][0];
-    out.fill(0);
-    this.engine.render(out);
+    const [l, r] = outputs[0];
+    this.engine.renderStereo(l, r ?? this.spare.subarray(0, l.length));
     return true;
   }
 }

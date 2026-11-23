@@ -17,10 +17,10 @@ export interface Synth {
 /** A playable sound, as it travels between the page and the worklet. */
 export type Instrument =
   | { kind: "fm6"; patch: Uint8Array }
-  | { kind: "engine"; engine: string; params: number[]; env: number[]; fenv: number; mono: boolean; ftype?: number };
+  | { kind: "engine"; engine: string; params: number[]; env: number[]; fenv: number; mono: boolean; ftype?: number; fx?: number[] };
 
 export function instrumentFromPreset(engine: string, p: Preset): Instrument {
-  return { kind: "engine", engine, params: [...p.e], env: [...p.env], fenv: p.fenv, mono: !!p.mono };
+  return { kind: "engine", engine, params: [...p.e], env: [...p.env], fenv: p.fenv, mono: !!p.mono, fx: [...p.fx] };
 }
 
 export function makeSynth(inst: Instrument, voices = 8): Synth {

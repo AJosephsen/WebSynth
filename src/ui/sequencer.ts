@@ -1,7 +1,8 @@
 import { LibraryEntry } from "../instruments";
 import { Instrument } from "../synth/synth";
+import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
 import {
-  clonePattern, defaultSong, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
+  clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
 } from "../seq/song";
 
 const KEY = "websynth.song.v1";
@@ -11,6 +12,9 @@ const isBlack = (n: number) => [1, 3, 6, 8, 10].includes(n % 12);
 const VELS = [50, 80, 100, 127];
 const GATES = [0.5, 0.9, 1.8, 3.6, 7.5];
 const ROWS = 24;
+const MIX_KEYS: [keyof MixSetup, string, number, number][] = [
+  ["level", "Level", 0, 127], ["pan", "Pan", -64, 63], ["dist", "Dist", 0, 127], ["chorus", "Chorus", 0, 127], ["delay", "Delay", 0, 127], ["reverb", "Reverb", 0, 127],
+];
 
 export interface SequencerDeps {
   library: () => LibraryEntry[];
@@ -54,6 +58,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       <button id="sq-reset">Reset to demo song</button>
     </div>
     <div id="sq-tracks" class="seq-tracks"></div>
+    <details class="fxp"><summary>Effects</summary><div id="sq-fx" class="seq-bar"></div></details>
     <div class="seq-bar" id="sq-patbar"></div>
     <div class="seq-bar">
       <label>Name <input id="sq-name" maxlength="16"></label>
@@ -101,9 +106,20 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         return `<div class="trk${i === track ? " sel" : ""}" data-t="${i}">
           <button data-act="sel">Track ${i + 1}</button>
           <select data-act="patch">${opts}</select>
-          <button data-act="mute" class="${t.mute ? "off" : ""}">${t.mute ? "Muted" : "Mute"}</button></div>`;
+          <button data-act="mute" class="${t.mute ? "off" : ""}">${t.mute ? "Muted" : "Mute"}</button>
+          <div class="mix">${MIX_KEYS.map(([k, label, lo, hi]) => `<label>${label}<input type="range" data-mix="${k}" min="${lo}" max="${hi}" value="${t[k]}"></label>`).join("")}</div></div>`;
       })
       .join("");
+  }
+
+  function renderFx(): void {
+    const f = song.fx;
+    const sl = (k: keyof typeof f, label: string, lo: number, hi: number) => `<label>${label}<input type="range" data-fx="${k}" min="${lo}" max="${hi}" value="${f[k]}"></label>`;
+    $("sq-fx").innerHTML = `
+      <label>Delay time <select data-fx="dtime">${DTIME_NAMES.map((n, i) => `<option value="${i}"${f.dtime === i ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      ${sl("dfdbk", "Feedback", 0, 120)}${sl("dcolor", "Color", 0, 127)}${sl("dmix", "Delay mix", 0, 127)}
+      <label>Reverb <select data-fx="rtype">${RTYPE_NAMES.map((n, i) => `<option value="${i}"${f.rtype === i ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      ${sl("rsize", "Size", 0, 127)}${sl("rdamp", "Damp", 0, 127)}${sl("crate", "Chorus rate", 0, 127)}${sl("cdepth", "Chorus depth", 0, 127)}`;
   }
 
   function renderPatterns(): void {
@@ -156,6 +172,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   }
 
   function renderAll(): void {
+    renderFx();
     renderTracks();
     renderPatterns();
     renderRoll();
@@ -207,12 +224,36 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     if (chip) { arrSel = Number(chip.dataset.a); pat = song.arrangement[arrSel]; renderAll(); return; }
   });
 
+  root.addEventListener("input", (e) => {
+    const el = e.target as HTMLInputElement;
+    const trk = el.closest<HTMLElement>(".trk");
+    if (trk && el.dataset.mix) {
+      (song.tracks[Number(trk.dataset.t)] as unknown as Record<string, number>)[el.dataset.mix] = Number(el.value);
+      commit();
+    } else if (el.dataset.fx && el.type === "range") {
+      (song.fx as unknown as Record<string, number>)[el.dataset.fx] = Number(el.value);
+      commit();
+    }
+  });
+
   root.addEventListener("change", (e) => {
     const el = e.target as HTMLElement;
     const trk = el.closest<HTMLElement>(".trk");
     if (trk && el.dataset.act === "patch") {
-      song.tracks[Number(trk.dataset.t)].patch = (el as HTMLSelectElement).value;
+      const i = Number(trk.dataset.t);
+      const id = (el as HTMLSelectElement).value;
+      song.tracks[i].patch = id;
+      const inst = deps.library().find((p) => p.id === id)?.instrument;
+      if (inst?.kind === "engine" && inst.fx) {
+        // a preset brings its own distortion and sends (as in Felucca)
+        const [dist, chorus, delay, reverb] = inst.fx;
+        Object.assign(song.tracks[i], { dist, chorus, delay, reverb });
+        renderTracks();
+      }
       commit(true);
+    } else if (el.dataset.fx && (el as HTMLSelectElement).tagName === "SELECT") {
+      (song.fx as unknown as Record<string, number>)[el.dataset.fx] = Number((el as HTMLSelectElement).value);
+      commit();
     }
   });
 
