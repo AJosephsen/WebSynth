@@ -37,15 +37,22 @@ export function mountPatchEditor(root: HTMLElement, deps: EditorDeps) {
     return `${(10 ** (fc & 3) * (1 + (ff / 99) * 8.772)).toFixed(1)} Hz`;
   }
 
-  const row = (p: Param, extra = "") => {
+  const fmts = new Map<number, (v: number) => string>();
+  let pointerDown = false;
+  let relabel = 0;
+  const row = (p: Param) => {
     const v = work[p.index];
-    return `<label class="prm"><span>${p.label}</span><input type="range" data-i="${p.index}" min="${p.min ?? 0}" max="${maxValue(p.index)}" value="${v}"${extra}><output data-o="${p.index}">${p.fmt ? p.fmt(v) : v}</output></label>`;
+    if (p.fmt) fmts.set(p.index, p.fmt);
+    return `<label class="kc"><span>${p.label}</span><input type="range" data-i="${p.index}" min="${p.min ?? 0}" max="${maxValue(p.index)}" value="${v}"><output data-o="${p.index}">${p.fmt ? p.fmt(v) : v}</output></label>`;
   };
+  const selectCell = (label: string, index: number, names: string[], extra = "") =>
+    `<label class="kc"><span>${label}</span><select data-i="${index}">${names.map((w, i) => `<option value="${i}"${work[index] === i ? " selected" : ""}>${w}</option>`).join("")}</select>${extra}</label>`;
+  const module = (title: string, body: string, cls = "") => `<section class="module ${cls}"><h4>${title}</h4>${body}</section>`;
 
   function envBlock(base: number): string {
     const rates = [0, 1, 2, 3].map((i) => work[base + FP.R1 + i]);
     const levels = [0, 1, 2, 3].map((i) => work[base + FP.L1 + i]);
-    let h = `<svg viewBox="0 0 200 70" class="env"><polyline points="${envPoints(rates, levels, 200, 70)}" fill="none" stroke="currentColor" stroke-width="2"/></svg><div class="two">`;
+    let h = `<svg viewBox="0 0 200 70" class="env"><polyline points="${envPoints(rates, levels, 200, 70)}" fill="none" stroke="currentColor" stroke-width="2"/></svg><div class="knobs">`;
     for (let i = 0; i < 4; i++) h += row({ label: `R${i + 1}`, index: base + FP.R1 + i });
     for (let i = 0; i < 4; i++) h += row({ label: `L${i + 1}`, index: base + FP.L1 + i });
     return h + "</div>";
@@ -54,7 +61,7 @@ export function mountPatchEditor(root: HTMLElement, deps: EditorDeps) {
   function pitchEnvBlock(): string {
     const rates = [0, 1, 2, 3].map((i) => work[FP.PR1 + i]);
     const levels = [0, 1, 2, 3].map((i) => work[FP.PL1 + i]);
-    let h = `<svg viewBox="0 0 200 70" class="env"><polyline points="${envPoints(rates, levels, 200, 70)}" fill="none" stroke="currentColor" stroke-width="2"/><line x1="0" x2="200" y1="35" y2="35" stroke="currentColor" stroke-opacity=".3"/></svg><div class="two">`;
+    let h = `<svg viewBox="0 0 200 70" class="env"><polyline points="${envPoints(rates, levels, 200, 70)}" fill="none" stroke="currentColor" stroke-width="2"/><line x1="0" x2="200" y1="35" y2="35" stroke="currentColor" stroke-opacity=".3"/></svg><div class="knobs">`;
     for (let i = 0; i < 4; i++) h += row({ label: `PR${i + 1}`, index: FP.PR1 + i });
     for (let i = 0; i < 4; i++) h += row({ label: `PL${i + 1}`, index: FP.PL1 + i, fmt: (v) => String(v - 50) });
     return h + "</div>";
@@ -62,11 +69,13 @@ export function mountPatchEditor(root: HTMLElement, deps: EditorDeps) {
 
   function render(): void {
     if (!origin) return;
+    fmts.clear();
     const alg = work[FP.ALG] + 1;
     const base = opBase(op);
     const tabs = [1, 2, 3, 4, 5, 6]
       .map((n) => `<button data-op="${n}" class="optab${n === op ? " sel" : ""}">OP${n}<small>${ratioText(opBase(n))} · ${work[opBase(n) + FP.OL]}</small></button>`)
       .join("");
+    const k = (html: string) => `<div class="knobs">${html}</div>`;
     root.innerHTML = `
       <div class="pe-top">
         <label>Name <input id="pe-name" maxlength="10" value="${patchName(work).replace(/"/g, "&quot;")}"></label>
@@ -75,38 +84,29 @@ export function mountPatchEditor(root: HTMLElement, deps: EditorDeps) {
         <button id="pe-over"${origin.source === "user" ? "" : " disabled"}>Overwrite user patch</button>
         <button id="pe-reset">Revert to original</button>
       </div>
-      <div class="pe-grid">
-        <div class="pe-voice">
-          <h4>Algorithm ${alg}</h4>
-          ${algoSvg(alg, op)}
-          ${row({ label: "Algorithm", index: FP.ALG, fmt: (v) => String(v + 1) })}
-          ${row({ label: "Feedback", index: FP.FB })}
-          ${row({ label: "Transpose", index: FP.TRNSP, fmt: (v) => `${v - 24 >= 0 ? "+" : ""}${v - 24} st` })}
-          <h4>LFO</h4>
-          ${row({ label: "Speed", index: FP.LFS })}${row({ label: "Delay", index: FP.LFD })}
-          ${row({ label: "Pitch depth", index: FP.LPMD })}${row({ label: "Amp depth", index: FP.LAMD })}
-          ${row({ label: "Pitch sens", index: FP.LPMS })}
-          <label class="prm"><span>Wave</span><select data-i="${FP.LFW}">${WAVES.map((w, i) => `<option value="${i}"${work[FP.LFW] === i ? " selected" : ""}>${w}</option>`).join("")}</select></label>
-          <label class="prm"><span>Key sync</span><input type="checkbox" data-i="${FP.LKS}"${work[FP.LKS] ? " checked" : ""}></label>
-          <h4>Pitch envelope</h4>
-          ${pitchEnvBlock()}
-        </div>
-        <div class="pe-op">
-          <div class="optabs">${tabs}</div>
-          <h4>Operator ${op}</h4>
-          ${row({ label: "Output level", index: base + FP.OL })}
-          <label class="prm"><span>Mode</span><select data-i="${base + FP.MODE}"><option value="0"${work[base + FP.MODE] ? "" : " selected"}>Ratio</option><option value="1"${work[base + FP.MODE] ? " selected" : ""}>Fixed Hz</option></select><output>${ratioText(base)}</output></label>
-          ${row({ label: "Coarse", index: base + FP.FC })}${row({ label: "Fine", index: base + FP.FF })}
-          ${row({ label: "Detune", index: base + FP.DET, fmt: (v) => String(v - 7) })}
-          ${row({ label: "Velocity sens", index: base + FP.KVS })}${row({ label: "Rate scaling", index: base + FP.RS })}
-          ${row({ label: "Amp mod sens", index: base + FP.AMS })}
-          <h4>Envelope</h4>
-          ${envBlock(base)}
-          <h4>Level scaling</h4>
-          ${row({ label: "Break point", index: base + FP.BP, fmt: (v) => noteName(v + 21) })}
-          ${row({ label: "Left depth", index: base + FP.LD })}${row({ label: "Right depth", index: base + FP.RD })}
-          ${[["Left curve", FP.LC], ["Right curve", FP.RC]].map(([l, o]) => `<label class="prm"><span>${l}</span><select data-i="${base + (o as number)}">${CURVES.map((c, i) => `<option value="${i}"${work[base + (o as number)] === i ? " selected" : ""}>${c}</option>`).join("")}</select></label>`).join("")}
-        </div>
+      <div class="panel">
+        ${module(`Algorithm ${alg}`, `<div class="algo-row">${algoSvg(alg, op)}${k(
+          row({ label: "Algorithm", index: FP.ALG, fmt: (v) => String(v + 1) }) + row({ label: "Feedback", index: FP.FB }) +
+          row({ label: "Transpose", index: FP.TRNSP, fmt: (v) => `${v - 24 >= 0 ? "+" : ""}${v - 24}` }))}</div>`, "wide")}
+        ${module("LFO", k(
+          row({ label: "Speed", index: FP.LFS }) + row({ label: "Delay", index: FP.LFD }) + row({ label: "Pitch depth", index: FP.LPMD }) +
+          row({ label: "Amp depth", index: FP.LAMD }) + row({ label: "Pitch sens", index: FP.LPMS }) +
+          selectCell("Wave", FP.LFW, WAVES) +
+          `<label class="kc"><span>Key sync</span><input type="checkbox" data-i="${FP.LKS}"${work[FP.LKS] ? " checked" : ""}></label>`))}
+        ${module("Pitch envelope", pitchEnvBlock())}
+        <section class="module full"><h4>Operators</h4><div class="optabs">${tabs}</div></section>
+        ${module(`Operator ${op}`, k(
+          row({ label: "Output level", index: base + FP.OL }) +
+          selectCell("Mode", base + FP.MODE, ["Ratio", "Fixed Hz"], `<output>${ratioText(base)}</output>`) +
+          row({ label: "Coarse", index: base + FP.FC }) + row({ label: "Fine", index: base + FP.FF }) +
+          row({ label: "Detune", index: base + FP.DET, fmt: (v) => String(v - 7) }) +
+          row({ label: "Velocity sens", index: base + FP.KVS }) + row({ label: "Rate scaling", index: base + FP.RS }) +
+          row({ label: "Amp mod sens", index: base + FP.AMS })), "wide")}
+        ${module(`Operator ${op} envelope`, envBlock(base))}
+        ${module(`Operator ${op} level scaling`, k(
+          row({ label: "Break point", index: base + FP.BP, fmt: (v) => noteName(v + 21) }) +
+          row({ label: "Left depth", index: base + FP.LD }) + row({ label: "Right depth", index: base + FP.RD }) +
+          selectCell("Left curve", base + FP.LC, CURVES) + selectCell("Right curve", base + FP.RC, CURVES)))}
       </div>`;
   }
 
@@ -128,19 +128,22 @@ export function mountPatchEditor(root: HTMLElement, deps: EditorDeps) {
     work[i] = v;
     const out = root.querySelector<HTMLElement>(`[data-o="${i}"]`);
     if (el.type === "range") {
-      // cheap update while dragging: only the number; the diagrams redraw when the drag ends
-      if (out) out.textContent = el.dataset.fmt ? "" : String(v);
+      // cheap update while turning: the number; the diagrams redraw when the knob is let go
+      if (out) out.textContent = fmts.get(i)?.(v) ?? String(v);
       changed(false);
+      clearTimeout(relabel);
+      relabel = window.setTimeout(function again() {
+        if (pointerDown) { relabel = window.setTimeout(again, 200); return; }
+        render();
+      }, 350);
     } else {
       changed(true);
     }
   });
 
-  // redraw formatted values, graphs and the algorithm diagram when a drag ends
-  root.addEventListener("change", (e) => {
-    const el = e.target as HTMLInputElement;
-    if (el.type === "range") render();
-  });
+  document.addEventListener("pointerdown", () => (pointerDown = true), true);
+  document.addEventListener("pointerup", () => (pointerDown = false), true);
+  document.addEventListener("pointercancel", () => (pointerDown = false), true);
 
   root.addEventListener("click", (e) => {
     const t = e.target as HTMLElement;
