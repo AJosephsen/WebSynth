@@ -17,3 +17,15 @@ export const PHYS_PRESETS: Preset[] = [
   { name: "DRONE STRING", e: [3, 127, 80, 88, 64, 100, 92, 0], env: [0, 100, 127, 90], fenv: 0, mono: 0, fx: [0, 10, 20, 50], pat: 3 },
   { name: "HARP", e: [3, 8, 62, 74, 60, 90, 0, 0], env: [0, 100, 127, 80], fenv: 0, mono: 0, fx: [0, 20, 20, 60], pat: 3 },
 ];
+export const GRAIN_PRESETS: Preset[] = [
+  { name: "CLOUD PAD", e: [2, 50, 92, 88, 0, 40, 14, 100], env: [70, 90, 120, 90], fenv: 0, mono: 0, fx: [0, 40, 25, 85], pat: 5 },
+  { name: "GLITCH", e: [3, 64, 24, 112, 0, 100, 90, 127], env: [0, 70, 100, 30], fenv: 0, mono: 0, fx: [10, 0, 50, 25], pat: 4 },
+  { name: "FROZEN", e: [0, 40, 108, 72, 0, 0, 10, 92], env: [50, 100, 127, 100], fenv: 0, mono: 0, fx: [0, 30, 20, 95], pat: 5 },
+  { name: "SHIMMER", e: [0, 30, 70, 100, 12, 30, 24, 110], env: [30, 90, 110, 90], fenv: 0, mono: 0, fx: [0, 50, 40, 90], pat: 7 },
+];
+export const SAMPLE_PRESETS: Preset[] = [
+  { name: "PIANO", e: [0, 0, 0, 1, 127, 0, 0, 0], env: [0, 127, 127, 70], fenv: 0, mono: 0, fx: [0, 0, 0, 0], pat: 0 },
+  { name: "PIANO", e: [0, 0, 0, 1, 127, 0, 0, 0], env: [0, 127, 127, 70], fenv: 0, mono: 0, fx: [0, 0, 0, 0], pat: 0 },
+  { name: "FLUTE", e: [2, 0, 0, 1, 127, 0, 0, 0], env: [12, 80, 120, 60], fenv: 0, mono: 0, fx: [0, 0, 0, 0], pat: 0 },
+  { name: "SAX", e: [3, 0, 0, 1, 127, 0, 0, 0], env: [12, 80, 120, 60], fenv: 0, mono: 0, fx: [0, 0, 0, 0], pat: 0 },
+];
