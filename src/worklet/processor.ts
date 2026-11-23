@@ -1,5 +1,6 @@
 import type { ModSetup } from "../mod/setup";
 import type { InputSettings } from "../synth/noteinput";
+import { loadUserSlot, Zone } from "../sampler/base";
 import { factoryInstrument } from "../instruments";
 import { createEngine } from "../seq/engine";
 import { defaultSong, Song } from "../seq/song";
@@ -28,6 +29,7 @@ type Msg =
   | { type: "perfLatch"; on: boolean }
   | { type: "perfKill" }
   | { type: "liveInput"; settings: InputSettings }
+  | { type: "userSample"; slot: number; zones: Zone[] | null; data?: Uint8Array }
   | { type: "play" }
   | { type: "stop" };
 
@@ -61,6 +63,7 @@ class SynthProcessor extends AudioWorkletProcessor {
         case "perfK": en.perform.k[m.index] = m.value; break;
         case "perfLatch": en.perform.latchOn = m.on; break;
         case "perfKill": en.perform.allOff(); break;
+        case "userSample": loadUserSlot(m.slot, m.zones && m.data ? { zones: m.zones, data: m.data } : null); break;
         case "play": en.play(); break;
         case "stop": en.stop(); this.port.postMessage({ type: "stopped" }); break;
       }

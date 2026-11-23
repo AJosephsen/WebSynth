@@ -10,6 +10,8 @@ import { PF_NAMES } from "./fx/perform";
 import { ARP_MODES, ARP_RATES } from "./synth/arp";
 import { CHORD_NAMES, SCALE_NAMES, VOICING_NAMES } from "./synth/chord";
 import { defaultInput } from "./synth/noteinput";
+import { buildUserSlot, sampleFromWav, SLOT_MAX_DATA } from "./sampler/user";
+import type { Zone } from "./sampler/base";
 import { defaultMod, ModSetup } from "./mod/setup";
 import type { Instrument } from "./synth/synth";
 
@@ -46,6 +48,10 @@ app.innerHTML = `
           <label class="kc"><span>Key</span><select data-in="chord.root">${["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
           <label class="kc"><span>Scale</span><select data-in="chord.scale">${SCALE_NAMES.map((n, i) => `<option value="${i}"${i === 1 ? " selected" : ""}>${n}</option>`).join("")}</select></label>
         </div>
+      </section>
+      <section class="module"><h4>Samples <small>(your own WAV files for the SAMPLE, GRAIN and SLICE engines: choose SET / SRC USR1..USR3)</small></h4>
+        <div class="knobs" id="usr">${[0, 1, 2].map((k) => `<div class="kc usr"><span>USR${k + 1}</span><output id="usr-info${k}">empty</output><label class="file">Load WAVs <input type="file" accept=".wav,audio/wav" multiple data-usr="${k}"></label><button data-usr-clear="${k}">Clear</button></div>`).join("")}</div>
+        <p class="hint">Up to 16 files per slot, 3.7 s in all. A note name in the file name (C3, F#4) sets its root; the keyboard is split between the files.</p>
       </section>
       <section><h2>Patch library</h2>
         <select id="patch" size="12" disabled></select>
@@ -243,6 +249,47 @@ $<HTMLInputElement>("pf-latch").addEventListener("change", (ev) => {
 });
 $("pf-off").addEventListener("click", () => { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); });
 
+// ---- user samples ----
+interface StoredSlot { zones: Zone[]; data: string; info: string }
+const SAMPLE_KEY = "websynth.samples.v1";
+const slots: (StoredSlot | null)[] = [null, null, null];
+try { const raw = JSON.parse(localStorage.getItem(SAMPLE_KEY) ?? "[]"); for (let k = 0; k < 3; k++) slots[k] = raw[k] ?? null; } catch { /* storage unavailable */ }
+const toB64 = (u: Uint8Array): string => { let s = ""; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); return btoa(s); };
+const fromB64 = (b: string): Uint8Array => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
+function showSlot(k: number): void {
+  $(`usr-info${k}`).textContent = slots[k]?.info ?? "empty";
+}
+function sendSlot(k: number): void {
+  const s = slots[k];
+  node?.port.postMessage({ type: "userSample", slot: k, zones: s ? s.zones : null, data: s ? fromB64(s.data) : undefined });
+}
+function saveSlots(): void { try { localStorage.setItem(SAMPLE_KEY, JSON.stringify(slots)); } catch { /* too big or unavailable */ } }
+for (let k = 0; k < 3; k++) showSlot(k);
+$("usr").addEventListener("change", async (ev) => {
+  const el = ev.target as HTMLInputElement;
+  if (el.dataset.usr === undefined || !el.files?.length) return;
+  const k = Number(el.dataset.usr);
+  try {
+    const files = await Promise.all([...el.files].slice(0, 16).map(async (f) => sampleFromWav(f.name, await f.arrayBuffer())));
+    const slot = buildUserSlot(files);
+    slots[k] = { zones: slot.zones, data: toB64(slot.data), info: `${files.length} file${files.length > 1 ? "s" : ""}, ${(slot.data.length / 1024).toFixed(0)} of ${(SLOT_MAX_DATA / 1024).toFixed(0)} KB` };
+    saveSlots();
+    sendSlot(k);
+    showSlot(k);
+    status.textContent = `USR${k + 1}: ${slots[k]!.info}.`;
+  } catch (e) {
+    status.textContent = `USR${k + 1}: ${(e as Error).message}`;
+  }
+  el.value = "";
+});
+$("usr").addEventListener("click", (ev) => {
+  const b = (ev.target as HTMLElement).closest<HTMLElement>("[data-usr-clear]");
+  if (!b) return;
+  const k = Number(b.dataset.usrClear);
+  slots[k] = null;
+  saveSlots(); sendSlot(k); showSlot(k);
+});
+
 // ---- arpeggiator and chord keys ----
 const inputSettings = defaultInput();
 $("playctl").addEventListener("input", (ev) => {
@@ -352,6 +399,7 @@ startBtn.onclick = async () => {
   node.connect(ctx.destination);
   choose(current);
   node.port.postMessage({ type: "liveMod", mod: liveMod });
+  for (let k = 0; k < 3; k++) if (slots[k]) sendSlot(k);
   node.port.onmessage = (e) => seq.onMessage(e.data);
   seq.sync();
   startBtn.disabled = true;

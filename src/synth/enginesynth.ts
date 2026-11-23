@@ -24,6 +24,8 @@ export class EnginePoly implements Synth {
   private buf = new Int32Array(CTL);
   private sbuf = new Int32Array(CTL); // SPREAD: the left voices
   spreadActive = false;
+  /** An engine effect still rings (ADPCM's echo): the part keeps rendering. */
+  private tail = false;
   /** Values the sequencer's locks and automation hold over the instrument's own. */
   private readonly held = new Map<number, number>();
   readonly paramStore: ParamStore = {
@@ -150,9 +152,14 @@ export class EnginePoly implements Synth {
       const v = this.voices[k];
       if (!v.active) continue;
       let env = this.envTick(v);
+      if (e.ownenv && v.active) { // the engine's envelopes end the voice (ADPCM)
+        if (e.done!(t, v)) { v.active = 0; v.gate = 0; v.stage = 0; v.env = v.envOut = 0; continue; }
+        v.env = 1 << 24;
+        env = 32767;
+      }
       if (e.amp) env = e.amp(t, v, env);
       if (!v.active) continue;
-      let amp1 = mulq15(env, v.vel * 258);
+      let amp1 = e.ownenv ? env : mulq15(env, v.vel * 258);
       if (p[P_LD_AMP]) amp1 = mulq15(amp1, 32767 - mulq15(p[P_LPOL] ? lfo : (lfo + 32768) >> 1, p[P_LD_AMP] * 258));
       const amp0 = this.last[k];
       this.last[k] = amp1;
@@ -164,29 +171,31 @@ export class EnginePoly implements Synth {
         if (st < 1) st = 1;
         v.pitchCur += d > 0 ? (d < st ? d : st) : -d < st ? d : -st;
       }
-      const pitch16 = clamp(v.pitchCur + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((env * p[P_ED_PIT] * 3) >> 15), 0, 2047);
+      const envq = e.ownenv ? 0 : env;
+      const pitch16 = clamp(v.pitchCur + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((envq * p[P_ED_PIT] * 3) >> 15), 0, 2047);
       let inc = pitchInc(pitch16);
       if (v.fine) inc = (inc + Math.imul(inc >>> 12, v.fine)) >>> 0;
-      let cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((env * p[P_ED_FLT]) >> 7);
-      if (v.vel > 110) cutoff += (env * 24) >> 7;
-      const shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((env * p[P_ED_SHP]) >> 7);
-      const m: Vmod = { pitch16, inc, fine: v.fine, amp0, amp1, envq15: env, cutoff, shape };
+      let cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((envq * p[P_ED_FLT]) >> 7);
+      if (v.vel > 110) cutoff += (envq * 24) >> 7;
+      const shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((envq * p[P_ED_SHP]) >> 7);
+      const m: Vmod = { pitch16, inc, fine: v.fine, amp0, amp1, envq15: envq, cutoff, shape };
       if (on) {
         mod.voice(v, m, v.fine);
         this.last[k] = v.envOut;
       }
       e.render(t, v, this.spreadActive && v.side === 0 ? this.sbuf : this.buf, CTL, m);
     }
-    if (this.spreadActive) for (let i = 0; i < CTL; i++) this.buf[i] += this.sbuf[i]; // buf: every voice; sbuf: the left ones
+    if (this.spreadActive) for (let i = 0; i < CTL; i++) this.buf[i] += this.sbuf[i];
+    this.tail = e.post ? e.post(t, this.buf, CTL) !== 0 : false; // the engine's own effect over the part (ADPCM's echo) // buf: every voice; sbuf: the left ones
     if (on) mod.end();
   }
 
   render(out: Float32Array, start: number, n: number, side?: Float32Array): void {
-    if (this.activeVoices === 0 && this.pos >= CTL) return;
+    if (this.activeVoices === 0 && !this.tail && this.pos >= CTL) return;
     const k = (0.6 * this.gain) / 32768;
     for (let i = 0; i < n; i++) {
       if (this.pos >= CTL) {
-        if (this.activeVoices === 0) return;
+        if (this.activeVoices === 0 && !this.tail) return;
         this.block();
         this.pos = 0;
       }

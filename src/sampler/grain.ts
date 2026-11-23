@@ -2,7 +2,7 @@
 // See NOTICE.
 import { clamp, mulq15, noiseStep, voiceAmp } from "../engines/dsp";
 import { CTL, EngineDef, EngVoice, F, P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7, Track, Vmod } from "../engines/types";
-import { IMA_IDX, IMA_STEP, pow2q16, SMP_ALL_NAMES, SMP_DATA, SMP_NALL, SMP_NSETS, smpSetMissing, smpSine, ZONES, Zone } from "./base";
+import { IMA_IDX, IMA_STEP, pow2q16, SMP_ALL_NAMES, SMP_DATA, SMP_NALL, SMP_NSETS, SMP_USER_SLOTS, smpSetMissing, smpSine, userGen, usrNz, usrZone, ZONES, Zone } from "./base";
 import { SMP_SETS } from "./data";
 import { GR_HANN, GR_NORM } from "./grain-tables";
 
@@ -35,9 +35,9 @@ function partOf(t: Track): Part {
   return p;
 }
 
-const gnz = (src: number): number => (src < SMP_NSETS ? SMP_SETS[src].nz : 0);
-const gzone = (src: number, zl: number): Zone => ZONES[SMP_SETS[src].z0 + zl];
-const gstamp = (src: number): number => (src < SMP_NSETS ? 0 : 0xffffffff);
+const gnz = (src: number): number => (src < SMP_NSETS ? SMP_SETS[src].nz : usrNz[(src - SMP_NSETS) % SMP_USER_SLOTS]);
+const gzone = (src: number, zl: number): Zone => (src < SMP_NSETS ? ZONES[SMP_SETS[src].z0 + zl] : usrZone[(src - SMP_NSETS) % SMP_USER_SLOTS][zl & 15]);
+const gstamp = (src: number): number => (src < SMP_NSETS ? 0 : usrNz[(src - SMP_NSETS) % SMP_USER_SLOTS] ? userGen.n : 0xffffffff);
 const gscale = (n: number, f16: number): number => (n >>> 16) * f16 + (((n & 0xffff) * f16) >>> 16);
 
 function dec(z: Zone, pos: number, st: St): number {

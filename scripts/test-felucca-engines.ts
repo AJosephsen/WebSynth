@@ -8,6 +8,8 @@ import { ENG_SAMPLE } from "../src/sampler/sample";
 import { ENG_GRAIN } from "../src/sampler/grain";
 import { ENG_SLICE } from "../src/sampler/slice";
 import { ENG_PHYS } from "../src/engines/phys";
+import { ENG_ADPCM } from "../src/adpcm/engine";
+import { ADP_PRESETS } from "../src/adpcm/data";
 import { ENG_FORMANT } from "../src/engines/formant";
 
 const ENGS: { id: string; e: EngineDef; presets: Preset[]; gold: string }[] = [
@@ -16,6 +18,7 @@ const ENGS: { id: string; e: EngineDef; presets: Preset[]; gold: string }[] = [
   { id: "sample", e: ENG_SAMPLE, presets: SAMPLE_PRESETS, gold: "tests/sample-gold.txt" },
   { id: "grain", e: ENG_GRAIN, presets: GRAIN_PRESETS, gold: "tests/grain-gold.txt" },
   { id: "slice", e: ENG_SLICE, presets: SLICE_PRESETS, gold: "tests/slice-gold.txt" },
+  { id: "adpcm", e: ENG_ADPCM, presets: ADP_PRESETS.map((p) => ({ name: p.name, e: p.e, env: p.env, fenv: 0, mono: p.mono, fx: p.fx, pat: p.pat })), gold: "tests/adpcm-gold.txt" },
 ];
 const hex = (h: bigint) => h.toString(16).padStart(16, "0");
 let total = 0, bad = 0;

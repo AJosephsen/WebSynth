@@ -20,9 +20,13 @@ function b64(s: string): Uint8Array {
   return out;
 }
 
-export const SMP_DATA = b64(SMP_DATA_B64);
-export const SMP_NSETS = SMP_SETS.length;
+const SMP_BUILTIN = b64(SMP_DATA_B64);
+/** User sample slots (eng_sample.c): three slots, each up to 81,408 bytes of IMA ADPCM, placed after the built-in data. */
+export const SMP_USER_CAP = 0x14000 - 512;
 export const SMP_USER_SLOTS = 3;
+export const SMP_DATA = new Uint8Array(SMP_BUILTIN.length + SMP_USER_SLOTS * SMP_USER_CAP);
+SMP_DATA.set(SMP_BUILTIN);
+export const SMP_NSETS = SMP_SETS.length;
 export const SMP_NALL = SMP_NSETS + SMP_USER_SLOTS;
 export const SMP_ALL_NAMES = [...SMP_SETS.map((s) => s.name), "USR1", "USR2", "USR3"];
 
@@ -42,8 +46,48 @@ export function pow2q16(d16: number): number {
   return oct >= 16 ? (r << (oct - 16)) >>> 0 : r >>> (16 - oct);
 }
 
-/** Set si has no sample data (the user slots are empty here). */
-export const smpSetMissing = (si: number): boolean => (si < SMP_NSETS ? !ZONES[SMP_SETS[si].z0].n : true);
+/** The user slots' zones (their data offsets rebased onto SMP_DATA) and how many each holds (0: empty or invalid). */
+export const usrZone: Zone[][] = Array.from({ length: SMP_USER_SLOTS }, () => Array.from({ length: 16 }, () => ({ ...EMPTY_ZONE })));
+export const usrNz = [0, 0, 0];
+/** +1 per slot scan (GRAIN's seek index follows uploads). */
+export const userGen = { n: 0 };
+const scanHooks: ((k: number, valid: boolean) => void)[] = [];
+/** Registers a callback run when a slot changes (SLICE builds its slice table there). */
+export function onUserScan(fn: (k: number, valid: boolean) => void): void { scanHooks.push(fn); }
+
+/** A user slot's contents: zones with data offsets relative to its ADPCM data, and the data (IMA ADPCM, 4 bit). */
+export interface UserSlot { zones: Zone[]; data: Uint8Array }
+
+/** (Re)reads slot k: a valid slot makes its zones usable; an unusable one leaves every zone empty (smp_user_scan). */
+export function loadUserSlot(k: number, slot: UserSlot | null): boolean {
+  userGen.n++;
+  usrNz[k] = 0;
+  for (const h of scanHooks) h(k, false);
+  let nz = 0;
+  const zt: Zone[] = [];
+  if (slot && slot.zones.length >= 1 && slot.zones.length <= 16 && slot.data.length <= SMP_USER_CAP) {
+    const base = SMP_BUILTIN.length + k * SMP_USER_CAP;
+    nz = slot.zones.length;
+    for (const z0 of slot.zones) {
+      const z = { ...z0 };
+      if (z.off > slot.data.length || z.n > 2 * SMP_USER_CAP || z.off + ((z.n + 1) >> 1) > slot.data.length || !z.rate || z.rate > 4 << 16 || z.ls > z.le || z.le >= z.n || z.lo > z.hi) { nz = 0; break; }
+      z.off += base;
+      zt.push(z);
+    }
+    if (nz) {
+      SMP_DATA.fill(0, base, base + SMP_USER_CAP);
+      SMP_DATA.set(slot.data, base);
+    }
+  }
+  for (let i = 0; i < 16; i++) usrZone[k][i] = i < nz ? zt[i] : { ...EMPTY_ZONE };
+  if (!nz) return false;
+  usrNz[k] = nz;
+  for (const h of scanHooks) h(k, true);
+  return true;
+}
+
+/** Set si has no sample data: an empty or invalid user slot, a built-in set without data. */
+export const smpSetMissing = (si: number): boolean => (si < SMP_NSETS ? !ZONES[SMP_SETS[si].z0].n : !usrNz[(si - SMP_NSETS) % SMP_USER_SLOTS]);
 
 /** A missing sample plays a plain sine at the note's pitch instead (state: phase, last output). */
 export function smpSine(out: Int32Array, n: number, m: Vmod, d16: number, lp: number, st: { ph: number; y: number }): void {

@@ -232,5 +232,19 @@ void m5; void lr;
   const gated = rmsOf({ mode: 1, pat: 7, rate: 1, depth: 127 });
   check(gated < open * 0.7 && gated > 0, `the SLICER gate closes the '.' steps (rms ${open.toFixed(3)} -> ${gated.toFixed(3)})`);
 }
+// ADPCM through the voice host: it sounds, and its echo rings on after the note
+{
+  const inst = factoryInstrument("ADPCM/ECHO PAD");
+  const syn = makeSynth(inst, 4);
+  const buf = new Float32Array(44100 * 2);
+  syn.noteOn(60, 100);
+  syn.render(buf, 0, 22050);
+  syn.noteOff(60);
+  syn.render(buf, 22050, 22050);
+  syn.allOff();
+  const late = buf.subarray(33000, 44100);
+  check(peak(buf.subarray(0, 22050)) > 0.01 && buf.every(Number.isFinite), "ADPCM sounds through the voice host");
+  check(peak(late) > 0.0005, `the ADPCM echo rings on after the note (peak ${peak(late).toFixed(4)})`);
+}
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");

@@ -2,10 +2,10 @@
 // keyboard. See NOTICE.
 import { clamp, mulq15, softclip, voiceAmp } from "../engines/dsp";
 import { EngineDef, EngVoice, F, P_ATK, P_E0, P_E1, P_E2, P_E3, P_E4, P_E6, P_REL, Track, Vmod } from "../engines/types";
-import { EMPTY_ZONE, IMA_IDX, IMA_STEP, pow2q16, SMP_ALL_NAMES, SMP_DATA, SMP_NALL, SMP_NSETS, smpSetMissing, smpSine, ZONES, Zone } from "./base";
+import { IMA_IDX, IMA_STEP, pow2q16, SMP_ALL_NAMES, SMP_DATA, SMP_NALL, SMP_NSETS, smpSetMissing, smpSine, usrNz, usrZone, ZONES, Zone } from "./base";
 import { SMP_SETS } from "./data";
 
-const zoneOf = (zi: number): Zone => (zi < 0x8000 ? ZONES[zi] : EMPTY_ZONE);
+const zoneOf = (zi: number): Zone => (zi < 0x8000 ? ZONES[zi] : usrZone[(zi >> 5) & 3][zi & 31 & 15]);
 
 /** Next decoded sample; voice: ph[0] position, s[0] predictor, s[1] step index. */
 function sampleNext(z: Zone, v: EngVoice, loop: number): number {
@@ -39,8 +39,14 @@ function noteOn(t: Track, v: EngVoice): void {
       if (v.note >= z.lo && v.note <= z.hi) { zi = set.z0 + i; break; }
     }
     v.s[4] = zi === 0xffff ? set.z0 : zi;
-  } else {
-    v.s[4] = 0;
+  } else { // a user slot: silent if empty; the narrowest zone plays
+    const k = si - SMP_NSETS;
+    let width = 128;
+    for (let i = 0; i < usrNz[k]; i++) {
+      const z = usrZone[k][i];
+      if (v.note >= z.lo && v.note <= z.hi && z.hi - z.lo <= width) { zi = 0x8000 | (k << 5) | i; width = z.hi - z.lo; }
+    }
+    v.s[4] = zi === 0xffff ? 0 : zi;
   }
   v.ph[0] = 0;
   v.ph[1] = 0;

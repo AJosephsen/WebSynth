@@ -1,7 +1,7 @@
 // Port of Felucca-Engines' tests/fe_host.c (MIT): a minimal voice host used to check the engines
 // against the reference renders. See NOTICE.
 import { clamp, pitchInc } from "./dsp";
-import { CTL, EngineDef, EngVoice, NVOICE, P_ATK, P_E0, P_FTYPE, P_REL, Track, Vmod } from "./types";
+import { CTL, EngineDef, EngVoice, NVOICE, P_ATK, P_DEC, P_E0, P_FTYPE, P_REL, P_SUS, Track, Vmod } from "./types";
 import { Preset } from "./presets";
 
 let vage = 0;
@@ -60,6 +60,8 @@ export function renderPhrase(e: EngineDef, pr: Pick<Preset, "e" | "env">, ftype:
   vage = 0;
   for (let k = 0; k < 8; k++) t.p[P_E0 + k] = pr.e[k];
   t.p[P_ATK] = pr.env[0];
+  t.p[P_DEC] = pr.env[1];
+  t.p[P_SUS] = pr.env[2];
   t.p[P_REL] = pr.env[3];
   t.p[P_FTYPE] = ftype;
   const M = 0xffffffffffffffffn;
@@ -75,6 +77,11 @@ export function renderPhrase(e: EngineDef, pr: Pick<Preset, "e" | "env">, ftype:
       const v = t.v[k];
       if (!v.active) continue;
       let a = envTick(v);
+      if (e.ownenv && v.active) {
+        if (e.done!(t, v)) { v.active = 0; v.gate = 0; v.stage = 0; v.env = v.envOut = 0; continue; }
+        v.env = 1 << 24;
+        a = 32767;
+      }
       if (e.amp) a = e.amp(t, v, a);
       if (!v.active) continue;
       const base = pitchInc(clamp(v.pitch16, 0, 2047));
@@ -84,13 +91,14 @@ export function renderPhrase(e: EngineDef, pr: Pick<Preset, "e" | "env">, ftype:
         fine: v.fine,
         amp0: last[k],
         amp1: a,
-        envq15: a,
+        envq15: e.ownenv ? 0 : a,
         cutoff: ((b % 96) - 48) * 128,
         shape: (64 << 8) + ((b % 64) - 32) * 256,
       };
       last[k] = a;
       e.render(t, v, out, CTL, m);
     }
+    e.post?.(t, out, CTL);
     for (let i = 0; i < CTL; i++) {
       const x = out[i] >>> 0;
       const a = out[i] < 0 ? -out[i] : out[i];

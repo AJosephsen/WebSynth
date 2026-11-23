@@ -3,7 +3,7 @@
 import { clamp, mulq15, mulq16, voiceAmp } from "../engines/dsp";
 import { ENV_EXP } from "../engines/felucca-tables";
 import { EngineDef, EngVoice, F, P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7, P_ROOT, Track, Vmod } from "../engines/types";
-import { IMA_IDX, IMA_STEP, pow2q16, SMP_DATA, smpSine } from "./base";
+import { IMA_IDX, IMA_STEP, onUserScan, pow2q16, SMP_DATA, SMP_USER_SLOTS, smpSine, usrNz, usrZone } from "./base";
 import { SLC_BREAK, SLC_PIANO } from "./data";
 
 const GRID = 128, GRID_LOG2 = 7, RB = 64, BASE = 60;
@@ -12,7 +12,13 @@ const ONE = 0, LOOP = 2;
 const DIV_AUTO = 4;
 
 interface Src { len: number; rate: number; nseg: number; nauto: number; seg: { off: number; at: number; n: number }[]; grid: number[]; apos: number[]; ast: number[] }
-const get = (src: number): Src | null => (src === 0 ? SLC_BREAK : src === SRC_PIANO ? SLC_PIANO : null);
+const usr: Src[] = Array.from({ length: SMP_USER_SLOTS }, () => ({ len: 0, rate: 0, nseg: 0, nauto: 0, seg: [], grid: [], apos: [], ast: [] }));
+const get = (src: number): Src | null => {
+  if (src === 0) return SLC_BREAK.len ? SLC_BREAK : null;
+  if (src === SRC_PIANO) return SLC_PIANO.len ? SLC_PIANO : null;
+  const k = src - 1;
+  return k >= 0 && k < SMP_USER_SLOTS && usrNz[k] && usr[k].len ? usr[k] : null;
+};
 
 class Dec { pred = 0; idx = 0; pos = 0; seg = 0; }
 function decAt(d: Dec, pos: number, st: number): void {
@@ -246,3 +252,77 @@ export const ENG_SLICE: EngineDef = {
   render,
   amp,
 };
+
+// ---- the slice table of a user slot (eng_slice.c slc_user_scan / slc_scan): two decoding passes, grid states and AUTO onsets ----
+const SEGS = 16, AUTO = 32, HOP = 32;
+const USR_MAX = 2 * (0x14000 - 512);
+
+function scan(s: Src, len: number): void {
+  const d = new Dec();
+  let pos = 0, k = 0, last = 0, h0 = 0, st0 = 0;
+  const gap = Math.floor((Math.imul(s.rate >>> 4, 44100) >>> 12) / 20);
+  let prev = 0, pkd = 0, pkr = 0, envd = 0, envr = 0;
+  decAt(d, 0, 0);
+  while (pos++ < len) {
+    const x = decNext(s, d);
+    let a = x - prev;
+    a = a < 0 ? -a : a;
+    pkd = a > pkd ? a : pkd;
+    a = x < 0 ? -x : x;
+    pkr = a > pkr ? a : pkr;
+    prev = x;
+  }
+  const thd = Math.trunc(pkd / 12), thr = Math.trunc(pkr / 8);
+  s.nauto = 1;
+  s.apos = [0];
+  s.ast = [0];
+  s.grid = new Array(GRID).fill(0);
+  decAt(d, 0, 0);
+  prev = 0;
+  for (pos = 0; pos < len;) {
+    const hs = pos, hst = decSt(d), e = len - pos > HOP ? pos + HOP : len;
+    let hd = 0, hr = 0;
+    for (; pos < e; pos++) {
+      while (k < GRID && (Math.floor((k * len) / 128)) === pos) s.grid[k++] = decSt(d);
+      const x = decNext(s, d);
+      let a = x - prev;
+      a = a < 0 ? -a : a;
+      hd = a > hd ? a : hd;
+      a = x < 0 ? -x : x;
+      hr = a > hr ? a : hr;
+      prev = x;
+    }
+    if (hs && ((hd > thd && hd * 4 > envd * 7) || (hr > thr && hr * 4 > envr * 7)) && h0 >= last + gap && s.nauto < AUTO) {
+      s.apos[s.nauto] = h0;
+      s.ast[s.nauto++] = st0;
+      last = h0;
+    }
+    envd = hd > envd ? hd : envd - Math.trunc(envd / 16);
+    envr = hr > envr ? hr : envr - Math.trunc(envr / 64);
+    h0 = hs;
+    st0 = hst;
+  }
+}
+
+onUserScan((k, valid) => {
+  const s = usr[k];
+  s.len = 0;
+  if (!valid) return;
+  s.nseg = 0;
+  s.seg = [];
+  let at = 0;
+  for (let i = 0; i < usrNz[k] && i < SEGS; i++) {
+    const z = usrZone[k][i];
+    let j = 0;
+    while (j < i && usrZone[k][j].off !== z.off) j++;
+    if (j < i || !z.n) continue;
+    if (z.n > USR_MAX - at) break;
+    s.seg.push({ off: z.off, at, n: z.n });
+    s.nseg++;
+    at += z.n;
+  }
+  if (!s.nseg) return;
+  s.rate = usrZone[k][0].rate;
+  scan(s, at);
+  s.len = at;
+});

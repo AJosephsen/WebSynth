@@ -78,6 +78,12 @@ export interface EngineDef {
   desc?(t: Track, k: number): ParamDesc | undefined;
   /** Optional: once per block and part, before its voices. */
   block?(t: Track): void;
+  /** The engine's own envelopes end the voice (ADPCM): the track ADSR does nothing. */
+  ownenv?: boolean;
+  /** ownenv: the voice has gone silent for good. */
+  done?(t: Track, v: EngVoice): boolean;
+  /** Once per block, after the voices (ADPCM's echo): returns 1 while it still sounds. */
+  post?(t: Track, out: Int32Array, n: number): number;
   /** Resets engine state that lives outside the voices (WHEEL). */
   reset?(): void;
 }
