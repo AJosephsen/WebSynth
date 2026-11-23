@@ -15,6 +15,10 @@ export interface Synth {
   /** Adds `n` samples to out starting at `start`. */
   render(out: Float32Array, start: number, n: number, side?: Float32Array): void;
   /** SPREAD is on: the voices are split left / right and render() also fills `side` (left minus right). */
+  /** The voice mode (0 POLY, 1 MONO, 2 LEGATO, 3 UNISON); chord keys play a chord in POLY only. */
+  readonly voiceMode?: number;
+  /** The part's keys are a kit (no chords). */
+  readonly keyKit?: boolean;
   readonly spreadActive?: boolean;
   /** SPRD, 0..127. */
   readonly spreadAmount?: number;

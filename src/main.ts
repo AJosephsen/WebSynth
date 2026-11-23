@@ -7,6 +7,9 @@ import { factoryEntries, fm6Entry, LibraryEntry, loadUserEngineEntries, saveUser
 import { mountEngineEditor } from "./ui/engineeditor";
 import { mountKnobs } from "./ui/knobs";
 import { PF_NAMES } from "./fx/perform";
+import { ARP_MODES, ARP_RATES } from "./synth/arp";
+import { CHORD_NAMES, SCALE_NAMES, VOICING_NAMES } from "./synth/chord";
+import { defaultInput } from "./synth/noteinput";
 import { defaultMod, ModSetup } from "./mod/setup";
 import type { Instrument } from "./synth/synth";
 
@@ -28,6 +31,22 @@ app.innerHTML = `
   <div id="status" class="statusbar"></div>
   <main>
     <div class="tab" data-tab="sound">
+      <section class="module"><h4>Play <small>(arpeggiator and chord keys for the keyboard)</small></h4>
+        <div class="knobs" id="playctl">
+          <label class="kc"><span>Arp</span><select data-in="arp.mode">${ARP_MODES.map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
+          <label class="kc"><span>Rate</span><select data-in="arp.rate">${ARP_RATES.map((n, i) => `<option value="${i}"${i === 2 ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+          <label class="kc"><span>Octaves</span><input type="range" data-in="arp.oct" min="1" max="4" value="1"><output>1</output></label>
+          <label class="kc"><span>Gate</span><input type="range" data-in="arp.gate" min="1" max="127" value="64"><output>64</output></label>
+          <label class="kc"><span>Swing</span><input type="range" data-in="arp.swing" min="0" max="100" value="0"><output>0</output></label>
+          <label class="kc"><span>Prob</span><input type="range" data-in="arp.prob" min="0" max="127" value="127"><output>127</output></label>
+          <label class="kc"><span>Hold</span><input type="checkbox" data-in="arp.hold"></label>
+          <label class="kc"><span>As played</span><input type="checkbox" data-in="arp.order"></label>
+          <label class="kc"><span>Chord</span><select data-in="chord.chrd">${CHORD_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
+          <label class="kc"><span>Voicing</span><select data-in="chord.voic">${VOICING_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
+          <label class="kc"><span>Key</span><select data-in="chord.root">${["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
+          <label class="kc"><span>Scale</span><select data-in="chord.scale">${SCALE_NAMES.map((n, i) => `<option value="${i}"${i === 1 ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+        </div>
+      </section>
       <section><h2>Patch library</h2>
         <select id="patch" size="12" disabled></select>
         <div>
@@ -223,6 +242,18 @@ $<HTMLInputElement>("pf-latch").addEventListener("change", (ev) => {
   if (!(ev.target as HTMLInputElement).checked) { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); }
 });
 $("pf-off").addEventListener("click", () => { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); });
+
+// ---- arpeggiator and chord keys ----
+const inputSettings = defaultInput();
+$("playctl").addEventListener("input", (ev) => {
+  const el = ev.target as HTMLInputElement | HTMLSelectElement;
+  const key = el.dataset.in;
+  if (!key) return;
+  const [group, name] = key.split(".");
+  const value = el instanceof HTMLInputElement && el.type === "checkbox" ? el.checked : Number(el.value);
+  (inputSettings[group as "arp" | "chord"] as unknown as Record<string, unknown>)[name] = value;
+  node?.port.postMessage({ type: "liveInput", settings: inputSettings });
+});
 
 // ---- live input and the on-screen keyboard ----
 const KEYS = "awsedftgyhujk";

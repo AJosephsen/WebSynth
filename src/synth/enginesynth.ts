@@ -24,6 +24,7 @@ export class EnginePoly implements Synth {
   private buf = new Int32Array(CTL);
   private sbuf = new Int32Array(CTL); // SPREAD: the left voices
   spreadActive = false;
+  get voiceMode(): number { return this.track.p[P_VOICE]; }
   get spreadAmount(): number { return this.track.p[P_SPRD]; }
   private pos = CTL;
   private last: Int32Array;

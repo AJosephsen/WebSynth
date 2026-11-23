@@ -130,6 +130,8 @@ export class DrumSynth implements Synth {
     });
   }
 
+  readonly keyKit = true;
+
   render(out: Float32Array, start: number, n: number): void {
     if (this.activeVoices === 0 && this.pos >= CTL) return;
     for (let i = 0; i < n; i++) {

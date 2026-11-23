@@ -3,6 +3,7 @@ import { CTL } from "../engines/types";
 import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Insert } from "../fx/insert";
 import { Perform } from "../fx/perform";
+import { NoteInput } from "../synth/noteinput";
 import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
@@ -63,6 +64,8 @@ export class Engine {
   private inserts: Insert[] = [];
   /** The FX hold layer: throws, mutes (see fx/perform.ts). */
   readonly perform = new Perform();
+  /** The live keyboard's input: chord keys and the arpeggiator. */
+  readonly liveInput = new NoteInput(() => this.live);
   private fxs: FxSettings;
   // output FIFO
   private fifoL = new Float32Array(CTL);
@@ -289,6 +292,7 @@ export class Engine {
   }
 
   private produceBlock(): void {
+    this.liveInput.tick(CTL, Math.round((this.sampleRate * 60) / this.song.bpm));
     this.perform.bpm = this.song.bpm;
     this.perform.playing = this.playing;
     const perf = this.perform.begin(CTL);

@@ -2,6 +2,7 @@
 import { factoryInstrument } from "../src/instruments";
 import { createEngine, Engine } from "../src/seq/engine";
 import { engineById } from "../src/engines/registry";
+import { defaultInput, NoteInput } from "../src/synth/noteinput";
 import { makeSynth, Instrument } from "../src/synth/synth";
 import { defaultSongFx, emptyPattern, sanitizeSong, Song } from "../src/seq/song";
 import { defaultMod, ModSetup } from "../src/mod/setup";
@@ -110,6 +111,29 @@ void m5; void lr;
   let lr0 = 0, lr1 = 0;
   for (let i = 0; i < sp0.l.length; i++) { lr0 += Math.abs(sp0.l[i] - sp0.r[i]); lr1 += Math.abs(sp1.l[i] - sp1.r[i]); }
   check(lr0 < 1e-3 && lr1 > 1, `SPREAD opens the stereo image (L-R ${lr0.toFixed(3)} -> ${lr1.toFixed(2)})`);
+}
+// chord keys and the arpeggiator in front of a synth
+{
+  const events: string[] = [];
+  const rec = { gain: 1, activeVoices: 0, noteOn: (n: number) => events.push(`+${n}`), noteOff: (n: number) => events.push(`-${n}`), allOff: () => events.push("off"), render: () => undefined };
+  const input = new NoteInput(() => rec);
+  const st = defaultInput();
+  st.chord.chrd = 3; // MAJ
+  input.set(st);
+  input.noteOn(60, 100);
+  input.noteOff(60);
+  check(events.join(" ") === "+60 +64 +67 -60 -64 -67", `a chord key starts and ends its notes (${events.join(" ")})`);
+  events.length = 0;
+  const st2 = defaultInput();
+  st2.arp.mode = 1; // UP
+  st2.arp.rate = 2; // 1/16
+  input.set(st2);
+  input.noteOn(60, 100);
+  input.noteOn(64, 100);
+  for (let i = 0; i < 1400; i++) input.tick(32, 22050); // 1 s at 120 BPM: eight sixteenths
+  const ons = events.filter((e) => e.startsWith("+")).map((e) => e.slice(1)).join(",");
+  check(/^(60,64,)+/.test(ons + ","), `the arp alternates the held notes (${ons})`);
+  check(events.filter((e) => e.startsWith("+")).length >= 6, "the arp plays in time");
 }
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");

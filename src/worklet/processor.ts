@@ -1,4 +1,5 @@
 import type { ModSetup } from "../mod/setup";
+import type { InputSettings } from "../synth/noteinput";
 import { factoryInstrument } from "../instruments";
 import { createEngine } from "../seq/engine";
 import { defaultSong, Song } from "../seq/song";
@@ -26,6 +27,7 @@ type Msg =
   | { type: "perfK"; index: number; value: number }
   | { type: "perfLatch"; on: boolean }
   | { type: "perfKill" }
+  | { type: "liveInput"; settings: InputSettings }
   | { type: "play" }
   | { type: "stop" };
 
@@ -39,8 +41,9 @@ class SynthProcessor extends AudioWorkletProcessor {
       const m = e.data;
       const en = this.engine;
       switch (m.type) {
-        case "noteOn": en.live.noteOn(m.note, m.vel ?? 100); break;
-        case "noteOff": en.live.noteOff(m.note); break;
+        case "noteOn": en.liveInput.noteOn(m.note, m.vel ?? 100); break;
+        case "noteOff": en.liveInput.noteOff(m.note); break;
+        case "liveInput": en.liveInput.set(m.settings); break;
         case "instrument": en.setInstrument(-1, m.instrument); break;
         case "trackInstrument": en.setInstrument(m.track, m.instrument); break;
         case "trackNoteOn": en.tracks[m.track]?.synth.noteOn(m.note, m.vel ?? 100); break;
