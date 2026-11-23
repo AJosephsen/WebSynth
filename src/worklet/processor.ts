@@ -22,8 +22,10 @@ type Msg =
   | { type: "midi"; track: number; status: number; d1: number; d2: number }
   | { type: "liveMix"; dist: number; chorus: number; delay: number; reverb: number }
   | { type: "liveMod"; mod: ModSetup | undefined }
-  | { type: "perf"; bit: number; on: boolean }
-  | { type: "perfThrow"; amount: number }
+  | { type: "perf"; effect: number; down: boolean }
+  | { type: "perfK"; index: number; value: number }
+  | { type: "perfLatch"; on: boolean }
+  | { type: "perfKill" }
   | { type: "play" }
   | { type: "stop" };
 
@@ -51,8 +53,10 @@ class SynthProcessor extends AudioWorkletProcessor {
         case "midi": en.midi(m.track, m.status, m.d1, m.d2); break;
         case "liveMix": en.liveMix = { ...en.liveMix, dist: m.dist, chorus: m.chorus, delay: m.delay, reverb: m.reverb }; break;
         case "liveMod": en.liveMod = m.mod; en.live.setMod?.(m.mod); break;
-        case "perf": en.perform.hold(m.bit, m.on); break;
-        case "perfThrow": en.perform.throwMacro = m.amount; break;
+        case "perf": en.perform.press(m.effect, m.down); break;
+        case "perfK": en.perform.k[m.index] = m.value; break;
+        case "perfLatch": en.perform.latchOn = m.on; break;
+        case "perfKill": en.perform.allOff(); break;
         case "play": en.play(); break;
         case "stop": en.stop(); this.port.postMessage({ type: "stopped" }); break;
       }

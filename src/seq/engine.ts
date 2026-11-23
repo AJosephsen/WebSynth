@@ -153,6 +153,7 @@ export class Engine {
     this.stepInPattern = 0;
     this.arrPos = 0;
     this.framesToStep = 0;
+    this.perform.start();
   }
 
   stop(): void {
@@ -253,7 +254,9 @@ export class Engine {
   }
 
   private produceBlock(): void {
-    this.perform.begin(CTL);
+    this.perform.bpm = this.song.bpm;
+    this.perform.playing = this.playing;
+    const perf = this.perform.begin(CTL);
     this.tracks.forEach((t, i) => { const s = this.song.tracks[i]; if (s) t.synth.setMix?.(s); });
     this.live.setMix?.(this.liveMix);
     this.renderSources();
@@ -263,15 +266,18 @@ export class Engine {
       this.mixSource(this.tbuf[i], i, setup ?? defaultMix(), t.synth);
     });
     this.mixSource(this.tbuf[this.tracks.length], this.tracks.length, this.liveMix, this.live);
-    if (this.perform.throwMacro || this.perform.busy) this.perform.pre(this.mixL, this.mixR, this.sendD, this.sendR, CTL);
+    if (perf) this.perform.pre(this.mixL, this.mixR, this.sendD, this.sendR, CTL);
     this.bus.throwAmount = this.perform.ew1;
     this.bus.process(this.fxs, this.sendC, this.sendD, this.sendR, this.wet, CTL);
     if (this.bus.side) this.bus.sideMix(this.mixL, this.mixR, CTL);
     const mg = this.masterQ12;
     for (let i = 0; i < CTL; i++) {
-      const l = Math.imul((this.mixL[i] + this.wet[i]) >> 2, mg) >> 10;
-      const r = Math.imul((this.mixR[i] + this.wet[i]) >> 2, mg) >> 10;
-      const [ol, or] = this.master.process(l, r);
+      this.mixL[i] = Math.imul((this.mixL[i] + this.wet[i]) >> 2, mg) >> 10;
+      this.mixR[i] = Math.imul((this.mixR[i] + this.wet[i]) >> 2, mg) >> 10;
+    }
+    if (perf) this.perform.block(this.mixL, this.mixR, CTL); // the FX layer between the master level and the limiter
+    for (let i = 0; i < CTL; i++) {
+      const [ol, or] = this.master.process(this.mixL[i], this.mixR[i]);
       this.fifoL[i] = ol / 32768;
       this.fifoR[i] = or / 32768;
     }

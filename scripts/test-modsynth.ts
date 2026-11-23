@@ -67,7 +67,7 @@ void m5; void lr;
   const N = 600 * 32;
   const make = (bit?: number): Float32Array => {
     const e = createEngine(44100, song(), factoryInstrument);
-    if (bit !== undefined) e.perform.hold(bit, true);
+    if (bit !== undefined) e.perform.press(bit, true);
     e.play();
     const l = new Float32Array(N), r = new Float32Array(N);
     e.renderStereo(l, r);

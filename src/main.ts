@@ -6,9 +6,11 @@ import { exportBank, loadSysex, loadUserPatches, saveUserPatches, toLibraryPatch
 import { factoryEntries, fm6Entry, LibraryEntry, loadUserEngineEntries, saveUserEngineEntries, userEngineEntry } from "./instruments";
 import { mountEngineEditor } from "./ui/engineeditor";
 import { mountKnobs } from "./ui/knobs";
+import { PF_NAMES } from "./fx/perform";
 import { defaultMod, ModSetup } from "./mod/setup";
 import type { Instrument } from "./synth/synth";
 
+const PAD_NAMES = [...PF_NAMES, "MUTE 1", "MUTE 2", "MUTE 3", "MUTE 4"];
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <header class="face">
@@ -39,14 +41,15 @@ app.innerHTML = `
     <div class="tab" data-tab="seq" hidden><div id="seq"></div></div>
     <div class="tab" data-tab="perf" hidden>
       <section class="module"><h4>FX hold layer <small>(hold a pad; with Latch a press toggles it)</small></h4>
-        <div class="pads" id="pads">
-          <button class="pad" data-bit="12">REV THROW</button>
-          <button class="pad" data-bit="13">ECHO THROW</button>
-          <button class="pad mutepad" data-bit="14">MUTE 1</button><button class="pad mutepad" data-bit="15">MUTE 2</button>
-          <button class="pad mutepad" data-bit="16">MUTE 3</button><button class="pad mutepad" data-bit="17">MUTE 4</button>
+        <div class="pads" id="pads">${PAD_NAMES.map((n, e) => `<button class="pad${e >= 14 ? " mutepad" : ""}" data-e="${e}">${n}</button>`).join("")}</div>
+        <div class="knobs">
+          <label class="kc"><span>Filter</span><input type="range" data-pk="0" min="-100" max="100" value="0"><output>0</output></label>
+          <label class="kc"><span>Crush</span><input type="range" data-pk="1" min="0" max="100" value="0"><output>0</output></label>
+          <label class="kc"><span>Throw</span><input type="range" data-pk="2" min="0" max="100" value="0"><output>0</output></label>
+          <label class="kc"><span>Depth</span><input type="range" data-pk="3" min="0" max="100" value="0"><output>0</output></label>
+          <label class="kc"><span>Latch</span><input type="checkbox" id="pf-latch"></label>
+          <label class="kc"><span>All off</span><button id="pf-off">Off</button></label>
         </div>
-        <div class="knobs"><label class="kc"><span>Throw</span><input type="range" id="pf-throw" min="0" max="100" value="0"><output>0</output></label>
-          <label class="kc"><span>Latch</span><input type="checkbox" id="pf-latch"></label></div>
       </section>
     </div>
   </main>
@@ -185,37 +188,41 @@ mountKnobs(app, (name, value) => {
 });
 
 // ---- performance layer ----
-const padHeld = new Set<number>();
-function padSet(bit: number, on: boolean): void {
-  if (on) padHeld.add(bit); else padHeld.delete(bit);
-  node?.port.postMessage({ type: "perf", bit, on });
-  app.querySelector(`.pad[data-bit="${bit}"]`)?.classList.toggle("on", on);
+const padLit = new Set<number>();
+function padShow(e: number, on: boolean): void {
+  if (on) padLit.add(e); else padLit.delete(e);
+  app.querySelector(`.pad[data-e="${e}"]`)?.classList.toggle("on", on);
 }
 const padsEl = $("pads");
-padsEl.addEventListener("pointerdown", (e) => {
-  const b = (e.target as HTMLElement).closest<HTMLElement>(".pad");
+const latch = () => $<HTMLInputElement>("pf-latch").checked;
+padsEl.addEventListener("pointerdown", (ev) => {
+  const b = (ev.target as HTMLElement).closest<HTMLElement>(".pad");
   if (!b) return;
-  const bit = Number(b.dataset.bit);
-  if ($<HTMLInputElement>("pf-latch").checked) { padSet(bit, !padHeld.has(bit)); return; }
-  padsEl.setPointerCapture(e.pointerId);
-  b.dataset.pid = String(e.pointerId);
-  padSet(bit, true);
+  const e = Number(b.dataset.e);
+  node?.port.postMessage({ type: "perf", effect: e, down: true });
+  if (latch()) { padShow(e, !padLit.has(e)); return; }
+  padsEl.setPointerCapture(ev.pointerId);
+  b.dataset.pid = String(ev.pointerId);
+  padShow(e, true);
 });
-const padUp = (e: PointerEvent) => {
-  if ($<HTMLInputElement>("pf-latch").checked) return;
+const padUp = (ev: PointerEvent) => {
   padsEl.querySelectorAll<HTMLElement>(".pad").forEach((b) => {
-    if (b.dataset.pid === String(e.pointerId)) { delete b.dataset.pid; padSet(Number(b.dataset.bit), false); }
+    if (b.dataset.pid === String(ev.pointerId)) {
+      delete b.dataset.pid;
+      node?.port.postMessage({ type: "perf", effect: Number(b.dataset.e), down: false });
+      padShow(Number(b.dataset.e), false);
+    }
   });
 };
 padsEl.addEventListener("pointerup", padUp);
 padsEl.addEventListener("pointercancel", padUp);
-$<HTMLInputElement>("pf-throw").addEventListener("input", (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  node?.port.postMessage({ type: "perfThrow", amount: v });
+app.querySelectorAll<HTMLInputElement>("[data-pk]").forEach((el) =>
+  el.addEventListener("input", () => node?.port.postMessage({ type: "perfK", index: Number(el.dataset.pk), value: Number(el.value) })));
+$<HTMLInputElement>("pf-latch").addEventListener("change", (ev) => {
+  node?.port.postMessage({ type: "perfLatch", on: (ev.target as HTMLInputElement).checked });
+  if (!(ev.target as HTMLInputElement).checked) { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); }
 });
-$<HTMLInputElement>("pf-latch").addEventListener("change", (e) => {
-  if (!(e.target as HTMLInputElement).checked) [...padHeld].forEach((b) => padSet(b, false));
-});
+$("pf-off").addEventListener("click", () => { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); });
 
 // ---- live input and the on-screen keyboard ----
 const KEYS = "awsedftgyhujk";
