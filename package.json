@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "esbuild scripts/test-fm6.ts --bundle --platform=node --format=cjs --outfile=dist-test/t.cjs --log-level=error && node dist-test/t.cjs"
+    "test": "esbuild scripts/test-fm6.ts --bundle --platform=node --format=cjs --outfile=dist-test/t.cjs --log-level=error && node dist-test/t.cjs && esbuild scripts/test-engines.ts --bundle --platform=node --format=cjs --outfile=dist-test/e.cjs --log-level=error && node dist-test/e.cjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
