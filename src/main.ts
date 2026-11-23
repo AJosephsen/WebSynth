@@ -8,28 +8,55 @@ import { mountEngineEditor } from "./ui/engineeditor";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
-  <h1>WebSynth</h1>
-  <section><h2>Live</h2>
-    <button id="start">Start audio</button>
-    <span id="status"></span>
-    <p>Play with the keys A W S E D F T G Y H U J K (C4 upward), Z and X shift the octave, or use a MIDI keyboard.</p>
-  </section>
-  <section><h2>Patch library</h2>
-    <select id="patch" size="12" disabled></select>
-    <div>
-      <label>Import DX7 .syx <input id="syx" type="file" accept=".syx"></label>
-      <button id="export">Export bank (.syx)</button>
-      <button id="delete">Delete user patch</button>
+  <header class="face">
+    <div class="logo">WEB<b>SYNTH</b><small>FM6 · 8 ENGINES · DRUM</small></div>
+    <div class="lcd" id="lcd">
+      <div class="l1" id="lcd1">--</div>
+      <div class="l2"><span id="lcd2"></span><span id="lcd3"></span></div>
     </div>
-  </section>
-  <section><h2>Patch editor</h2><div id="pe"></div><div id="ee"></div></section>
-  <section><h2>Sequencer</h2><div id="seq"></div></section>`;
+    <div class="ctl">
+      <button id="start">Start audio</button>
+      <div class="oct"><button id="octd" title="Octave down (Z)">&minus;</button><span id="octv">C3</span><button id="octu" title="Octave up (X)">+</button></div>
+    </div>
+  </header>
+  <nav class="tabs" id="tabs"><button data-tab="sound" class="sel">Sound</button><button data-tab="seq">Sequencer</button></nav>
+  <div id="status" class="statusbar"></div>
+  <main>
+    <div class="tab" data-tab="sound">
+      <section><h2>Patch library</h2>
+        <select id="patch" size="12" disabled></select>
+        <div>
+          <label>Import DX7 .syx <input id="syx" type="file" accept=".syx"></label>
+          <button id="export">Export bank (.syx)</button>
+          <button id="delete">Delete user patch</button>
+        </div>
+      </section>
+      <section><h2>Patch editor</h2><div id="pe"></div><div id="ee"></div></section>
+    </div>
+    <div class="tab" data-tab="seq" hidden><div id="seq"></div></div>
+  </main>
+  <footer class="kbd"><div class="keys" id="keys"></div><p>Keys A W S E D F T G Y H U J K, Z / X for the octave, the mouse or a MIDI keyboard. Further down the key, louder.</p></footer>`;
 
 const $ = <T extends HTMLElement>(id: string) => app.querySelector<T>("#" + id)!;
 const startBtn = $<HTMLButtonElement>("start");
 const select = $<HTMLSelectElement>("patch");
 const syx = $<HTMLInputElement>("syx");
 const status = $("status");
+
+// ---- display, tabs ----
+const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const noteName = (n: number) => noteNames[n % 12] + (Math.floor(n / 12) - 1);
+function lcdUpdate(): void {
+  $("lcd1").textContent = current.name;
+  $("lcd2").textContent = `${current.bank}${current.instrument.kind === "engine" ? " · engine" : current.instrument.kind === "drum" ? " · drum" : " · FM6"}`;
+}
+function lcdNote(text: string): void { $("lcd3").textContent = text; }
+$("tabs").addEventListener("click", (e) => {
+  const t = (e.target as HTMLElement).closest<HTMLElement>("button[data-tab]")?.dataset.tab;
+  if (!t) return;
+  app.querySelectorAll<HTMLElement>("#tabs button").forEach((b) => b.classList.toggle("sel", b.dataset.tab === t));
+  app.querySelectorAll<HTMLElement>(".tab").forEach((d) => (d.hidden = d.dataset.tab !== t));
+});
 
 // ---- library ----
 let library: LibraryEntry[] = [...factoryEntries, ...loadUserPatches().map(fm6Entry), ...loadUserEngineEntries()];
@@ -52,6 +79,7 @@ function choose(e: LibraryEntry): void {
   if (e.fm6) { fm6Editor.load(e.fm6); engineEditor.clear(); }
   else { fm6Editor.clear(); engineEditor.load(e); }
   node?.port.postMessage({ type: "instrument", instrument: e.instrument });
+  lcdUpdate();
 }
 function select_(e: LibraryEntry): void {
   current = e;
@@ -123,17 +151,63 @@ choose(current);
 // ---- sequencer ----
 const seq = mountSequencer($("seq"), { library: () => library, send: (m) => node?.port.postMessage(m) });
 
-// ---- live input ----
+// ---- live input and the on-screen keyboard ----
 const KEYS = "awsedftgyhujk";
 let octave = 0;
 const down = new Map<string, number>();
-function noteOn(note: number, vel = 100): void { node?.port.postMessage({ type: "noteOn", note, vel }); }
-function noteOff(note: number): void { node?.port.postMessage({ type: "noteOff", note }); }
+const keysEl = $("keys");
+const KEY_BASE = 48; // C3 at octave 0; two octaves and a C
+const NKEYS = 25;
+function buildKeys(): void {
+  const white = [0, 2, 4, 5, 7, 9, 11];
+  let html = "", wi = 0;
+  const nw = Array.from({ length: NKEYS }, (_, i) => i).filter((i) => white.includes(i % 12)).length;
+  for (let i = 0; i < NKEYS; i++) {
+    const black = !white.includes(i % 12);
+    if (!black) html += `<div class="k w" data-i="${i}" style="left:${(wi / nw) * 100}%;width:${100 / nw}%"><span>${i % 12 === 0 ? "C" + (Math.floor((KEY_BASE + i) / 12) - 1) : ""}</span></div>`;
+    else html += `<div class="k b" data-i="${i}" style="left:${((wi - 0.3) / nw) * 100}%;width:${(0.6 / nw) * 100}%"></div>`;
+    if (!black) wi++;
+  }
+  keysEl.innerHTML = html;
+}
+buildKeys();
+const base = () => KEY_BASE + octave * 12;
+function lit(note: number, on: boolean): void {
+  const i = note - base();
+  keysEl.querySelector(`[data-i="${i}"]`)?.classList.toggle("on", on);
+}
+function noteOn(note: number, vel = 100): void { node?.port.postMessage({ type: "noteOn", note, vel }); lit(note, true); lcdNote(`${noteName(note)}  v${vel}`); }
+function noteOff(note: number): void { node?.port.postMessage({ type: "noteOff", note }); lit(note, false); }
+function setOctave(o: number): void {
+  octave = Math.max(-3, Math.min(3, o));
+  $("octv").textContent = noteName(base());
+}
+setOctave(0);
+$("octd").onclick = () => setOctave(octave - 1);
+$("octu").onclick = () => setOctave(octave + 1);
+const held = new Map<number, number>(); // pointer id -> note
+keysEl.addEventListener("pointerdown", (e) => {
+  const k = (e.target as HTMLElement).closest<HTMLElement>(".k");
+  if (!k) return;
+  e.preventDefault();
+  keysEl.setPointerCapture(e.pointerId);
+  const r = k.getBoundingClientRect();
+  const vel = Math.round(40 + 87 * Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)));
+  const note = base() + Number(k.dataset.i);
+  held.set(e.pointerId, note);
+  noteOn(note, vel);
+});
+const release = (e: PointerEvent) => {
+  const n = held.get(e.pointerId);
+  if (n !== undefined) { held.delete(e.pointerId); noteOff(n); }
+};
+keysEl.addEventListener("pointerup", release);
+keysEl.addEventListener("pointercancel", release);
 addEventListener("keydown", (e) => {
   if (e.repeat || e.metaKey || e.ctrlKey || (e.target as HTMLElement).matches("input, select")) return;
   const k = e.key.toLowerCase();
-  if (k === "z") octave = Math.max(-3, octave - 1);
-  else if (k === "x") octave = Math.min(3, octave + 1);
+  if (k === "z") setOctave(octave - 1);
+  else if (k === "x") setOctave(octave + 1);
   const i = KEYS.indexOf(k);
   if (i >= 0 && !down.has(k)) {
     const note = 60 + octave * 12 + i;
