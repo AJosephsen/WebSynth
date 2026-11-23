@@ -1,6 +1,4 @@
 import workletUrl from "./worklet/processor.ts?worker&url";
-import { encodeWav } from "./wav";
-import { SAMPLE_RATE, snippets } from "./snippets";
 import { mountSequencer } from "./ui/sequencer";
 import { exportBank, factoryPatches, LibraryPatch, loadSysex, loadUserPatches, saveUserPatches } from "./fm6/library";
 
@@ -20,24 +18,13 @@ app.innerHTML = `
       <button id="delete">Delete user patch</button>
     </div>
   </section>
-  <section><h2>Sequencer</h2><div id="seq"></div></section>
-  <section><h2>Snippets</h2><div id="snips"></div></section>`;
+  <section><h2>Sequencer</h2><div id="seq"></div></section>`;
 
 const $ = <T extends HTMLElement>(id: string) => app.querySelector<T>("#" + id)!;
 const startBtn = $<HTMLButtonElement>("start");
 const select = $<HTMLSelectElement>("patch");
 const syx = $<HTMLInputElement>("syx");
 const status = $("status");
-
-// ---- snippets ----
-const snips = $("snips");
-for (const s of snippets) {
-  const url = URL.createObjectURL(encodeWav(s.render(), SAMPLE_RATE));
-  const row = document.createElement("div");
-  row.style.margin = "8px 0";
-  row.innerHTML = `<strong>${s.step}</strong> — ${s.title}<br><audio controls src="${url}"></audio>`;
-  snips.append(row);
-}
 
 // ---- library ----
 let library: LibraryPatch[] = [...factoryPatches, ...loadUserPatches()];
