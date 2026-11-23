@@ -1,3 +1,4 @@
+import { demoSongs } from "./seq/songs";
 import { MD_CUT, MD_DEPTH, MD_PAN, MD_PITCH, MD_REV, MD_TIME, MD_VEL, MS_ENV, MS_LFO, MS_RAND, MS_SH, MS_SLEW, MS_VEL } from "./mod/mod";
 import { defaultMod, ModSetup } from "./mod/setup";
 import { Operator } from "./dsp/operator";
@@ -200,6 +201,7 @@ export const snippets: Snippet[] = [
   })),
   ...fxDemos(),
   ...modDemos(),
+  ...songDemos(),
   ...drumDemos(),
 ];
 
@@ -289,6 +291,26 @@ function modDemos(): Snippet[] {
     make("Envelope to the LFO depth · vibrato that follows the note", "ANALOG/SAW LEAD", { rate: 90, ldPit: 20, slots: slots(slot(MS_ENV, MD_DEPTH, -64)) }),
     make("Humanize · random velocity and timing", "ANALOG/SAW LEAD", { slots: slots(slot(MS_RAND, MD_VEL, 24), slot(MS_RAND, MD_TIME, 40)) }),
   ];
+}
+
+/** The demo songs, played through their whole arrangement. */
+function songDemos(): Snippet[] {
+  return demoSongs.map((d): Snippet => ({
+    step: "Songs",
+    title: `${d.title} · ${d.genre}`,
+    render: () => {
+      const song = d.build();
+      const e = createEngine(SAMPLE_RATE, song, factoryInstrument);
+      const bars = song.arrangement.reduce((t, p) => t + song.patterns[p].length / 16, 0);
+      const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 4 * bars);
+      const out = new Float32Array(body + SAMPLE_RATE * 3);
+      e.play();
+      render(e, out, 0, body);
+      e.stop();
+      render(e, out, body, out.length - body);
+      return fade(out);
+    },
+  }));
 }
 
 /** A drum beat on each kit (General MIDI notes: 36 kick, 38 snare, 42 closed hat, 46 open hat, 45 tom) under a bass line. */

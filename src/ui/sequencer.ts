@@ -4,6 +4,7 @@ import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
 import { INSERT_NAMES, insertLabels } from "../fx/insert";
 import { engineById } from "../engines/registry";
 import { defaultMod } from "../mod/setup";
+import { demoSongs } from "../seq/songs";
 import { applyModInput, modPanelHtml } from "./modpanel";
 import {
   clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
@@ -62,7 +63,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         <div class="tpfile">
           <button id="sq-export">Export song</button>
           <label class="file">Import song <input id="sq-import" type="file" accept=".json"></label>
-          <button id="sq-reset">Reset to demo song</button>
+          <label class="file">Demo songs <select id="sq-demo"><option value="">Load a demo song…</option>${demoSongs.map((d) => `<option value="${d.id}">${d.title} · ${d.genre}</option>`).join("")}</select></label>
+          <button id="sq-reset">Reset to default song</button>
         </div>
       </div>
     </section>
@@ -391,6 +393,16 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       song = s; pat = 0; track = 0; arrSel = -1;
       commit(true); renderAll();
     } catch { /* not a song file */ }
+  };
+  ($<HTMLSelectElement>("sq-demo")).onchange = (e) => {
+    const sel = e.target as HTMLSelectElement;
+    const d = demoSongs.find((x) => x.id === sel.value);
+    sel.value = "";
+    if (!d) return;
+    song = d.build(); pat = 0; track = 0; arrSel = -1;
+    const first = deps.library().find((p) => p.id === song.tracks[0].patch)?.instrument;
+    base = first?.kind === "drum" ? 36 : 48;
+    commit(true); renderAll();
   };
   $("sq-reset").onclick = () => { song = defaultSong(); pat = 0; track = 0; arrSel = -1; commit(true); renderAll(); };
 
