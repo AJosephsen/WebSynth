@@ -3,11 +3,13 @@ import { readFileSync } from "node:fs";
 import { renderPhrase } from "../src/engines/minihost";
 import { EngineDef } from "../src/engines/types";
 import { Preset } from "../src/engines/presets";
-import { FORMANT_PRESETS } from "../src/engines/presets-felucca";
+import { FORMANT_PRESETS, PHYS_PRESETS } from "../src/engines/presets-felucca";
+import { ENG_PHYS } from "../src/engines/phys";
 import { ENG_FORMANT } from "../src/engines/formant";
 
 const ENGS: { id: string; e: EngineDef; presets: Preset[]; gold: string }[] = [
   { id: "voice", e: ENG_FORMANT, presets: FORMANT_PRESETS, gold: "tests/voice-gold.txt" },
+  { id: "phys", e: ENG_PHYS, presets: PHYS_PRESETS, gold: "tests/phys-gold.txt" },
 ];
 const hex = (h: bigint) => h.toString(16).padStart(16, "0");
 let total = 0, bad = 0;

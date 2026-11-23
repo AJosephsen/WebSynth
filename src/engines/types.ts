@@ -4,7 +4,7 @@ export const CTL = 32; // samples per block
 export const NVOICE = 8;
 
 // track parameter indices
-export const P_ATK = 0, P_REL = 1, P_FTYPE = 2, P_E0 = 3, P_E1 = 4, P_E2 = 5, P_E3 = 6, P_E4 = 7, P_E5 = 8, P_E6 = 9, P_E7 = 10, P_COUNT = 11;
+export const P_ATK = 0, P_REL = 1, P_FTYPE = 2, P_E0 = 3, P_E1 = 4, P_E2 = 5, P_E3 = 6, P_E4 = 7, P_E5 = 8, P_E6 = 9, P_E7 = 10, P_ROOT = 11, P_COUNT = 12;
 
 /** Parameter display kinds (felucca_engine.h F_*). */
 export const enum F { INT, PCT, BIPCT, TIME, LFOHZ, CUTOFF, DB, SEMI, ENUM, BPM, NOTE, ONOFF, OCT, STEPS }
@@ -52,6 +52,8 @@ export interface EngineDef {
   edit: ParamDesc[]; // P_E0..P_E7
   knob: number[];
   keep: number;
+  /** Voices the engine can sound at once (PHYS keeps a state slot for 3). */
+  poly?: number;
   noteOn(t: Track, v: EngVoice): void;
   render(t: Track, v: EngVoice, out: Int32Array, n: number, m: Vmod): void;
   /** Optional: the voice amplitude instead of the ADSR curve, once per control tick. */
