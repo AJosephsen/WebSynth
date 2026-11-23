@@ -1,3 +1,5 @@
+import { MD_CUT, MD_DEPTH, MD_PAN, MD_PITCH, MD_REV, MD_TIME, MD_VEL, MS_ENV, MS_LFO, MS_RAND, MS_SH, MS_SLEW, MS_VEL } from "./mod/mod";
+import { defaultMod, ModSetup } from "./mod/setup";
 import { Operator } from "./dsp/operator";
 import { byName, factoryPatches, LibraryPatch } from "./fm6/library";
 import { PolySynth } from "./synth/poly";
@@ -197,6 +199,7 @@ export const snippets: Snippet[] = [
     },
   })),
   ...fxDemos(),
+  ...modDemos(),
   ...drumDemos(),
 ];
 
@@ -242,6 +245,49 @@ function fxDemos(): Snippet[] {
     make("Insert · PHASER on WARM PAD", { itype: 6, ia: 40, ib: 110, ic: 80, reverb: 20 }, {}, "WARM PAD"),
     make("Insert · FLANGER on ANALOG SAW LEAD", { itype: 7, ia: 25, ib: 100, ic: 70 }, {}, "ANALOG/SAW LEAD"),
     make("Insert · CHORUS on TINE EP", { itype: 8, ia: 45, ib: 90, ic: 40 }, {}),
+  ];
+}
+
+/** The LFO and the modulation matrix on engine tracks (Felucca's MOD page). */
+function modDemos(): Snippet[] {
+  const nv = (note: number, vel: number, gate = 0.9) => ({ notes: [note], vel, gate });
+  const line = patternFrom("mod", [[
+    nv(57, 110), null, nv(60, 60), null, nv(64, 100), null, nv(67, 50), null, nv(69, 120, 2), null, null, null, nv(64, 70), null, nv(60, 100), null,
+  ]]);
+  const make = (title: string, engine: string, mod: Partial<ModSetup>, mix: Partial<ReturnType<typeof defaultMix>> = {}): Snippet => ({
+    step: "Modulation",
+    title,
+    render: () => {
+      const m: ModSetup = { ...defaultMod(), ...mod };
+      const song: Song = {
+        bpm: 108, swing: 0,
+        tracks: [{ patch: engine, mute: false, ...defaultMix(), reverb: 15, ...mix, mod: m }, ...[1, 2, 3].map(() => ({ patch: "INIT", mute: true, ...defaultMix() }))],
+        fx: defaultSong().fx,
+        patterns: [line], arrangement: [0],
+      };
+      const e = createEngine(SAMPLE_RATE, song, factoryInstrument);
+      const body = Math.floor(((SAMPLE_RATE * 60) / song.bpm) * 16);
+      const out = new Float32Array(body + SAMPLE_RATE * 2);
+      e.play();
+      render(e, out, 0, body);
+      e.stop();
+      render(e, out, body, out.length - body);
+      return fade(out);
+    },
+  });
+  const slot = (src: number, dst: number, amt: number) => ({ src, dst, amt });
+  const slots = (...s: { src: number; dst: number; amt: number }[]) => [...s, ...Array.from({ length: 4 - s.length }, () => slot(0, 0, 0))];
+  return [
+    make("Unmodulated (for comparison)", "ANALOG/SAW LEAD", {}),
+    make("Vibrato · LFO to pitch, fading in", "ANALOG/SAW LEAD", { rate: 85, ldPit: 14, fade: 90 }),
+    make("Tremolo · LFO to amplitude", "ANALOG/SOFT PAD", { rate: 92, ldAmp: 60 }),
+    make("Wobble · triangle LFO to cutoff, synced to 1/8", "ANALOG/ACID", { wave: 1, sync: 6, slots: slots(slot(MS_LFO, MD_CUT, 55)) }),
+    make("Auto-pan · LFO to PAN", "ANALOG/SOFT PAD", { rate: 80, slots: slots(slot(MS_LFO, MD_PAN, 63)) }),
+    make("Sample and hold · random pitch steps", "ANALOG/SQR BASS", { wave: 4, sync: 8, slots: slots(slot(MS_SH, MD_PITCH, 10)) }),
+    make("Smooth random · SLEW to cutoff", "ANALOG/SAW LEAD", { rate: 70, slots: slots(slot(MS_SLEW, MD_CUT, 40)) }),
+    make("Velocity to cutoff and to the reverb send", "ANALOG/SAW LEAD", { slots: slots(slot(MS_VEL, MD_CUT, 45), slot(MS_VEL, MD_REV, 50)) }),
+    make("Envelope to the LFO depth · vibrato that follows the note", "ANALOG/SAW LEAD", { rate: 90, ldPit: 20, slots: slots(slot(MS_ENV, MD_DEPTH, -64)) }),
+    make("Humanize · random velocity and timing", "ANALOG/SAW LEAD", { slots: slots(slot(MS_RAND, MD_VEL, 24), slot(MS_RAND, MD_TIME, 40)) }),
   ];
 }
 

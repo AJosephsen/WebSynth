@@ -33,4 +33,5 @@ Versilian Studios (Sam Gossner): VSCO-2 Community Edition (https://github.com/sg
 Pack, CC0 1.0). tests/sample-gold.txt, grain-gold.txt and slice-gold.txt are reference output of the C code.
 
 src/fx/insert.ts: TypeScript port of Felucca's INSERT effect (fx.c track_insert: SOFT, HARD, FOLD, FUZZ, CRUSH, PHASER, FLANGER, CHORUS; GPL-3.0-only).
+src/mod/mod.ts: TypeScript port of Felucca's modulation matrix (mod.c) and track LFO (voice.c: waves, SYNC, FADE, S&H, SLEW; GPL-3.0-only).
 tests/ins-gold.txt is reference output of that code.

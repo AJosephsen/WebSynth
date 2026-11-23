@@ -18,6 +18,7 @@ type Msg =
   | { type: "trackNoteOff"; track: number; note: number }
   | { type: "song"; song: Song; instruments?: Instrument[] }
   | { type: "mode"; mode: "pattern" | "song"; pattern: number }
+  | { type: "midi"; track: number; status: number; d1: number; d2: number }
   | { type: "play" }
   | { type: "stop" };
 
@@ -42,6 +43,7 @@ class SynthProcessor extends AudioWorkletProcessor {
           m.instruments?.forEach((inst, i) => en.setInstrument(i, inst));
           break;
         case "mode": en.mode = m.mode; en.patternIndex = m.pattern; break;
+        case "midi": en.midi(m.track, m.status, m.d1, m.d2); break;
         case "play": en.play(); break;
         case "stop": en.stop(); this.port.postMessage({ type: "stopped" }); break;
       }

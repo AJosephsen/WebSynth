@@ -2,6 +2,9 @@ import { LibraryEntry } from "../instruments";
 import { Instrument } from "../synth/synth";
 import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
 import { INSERT_NAMES, insertLabels } from "../fx/insert";
+import { engineById } from "../engines/registry";
+import { defaultMod } from "../mod/setup";
+import { applyModInput, modPanelHtml } from "./modpanel";
 import {
   clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
 } from "../seq/song";
@@ -47,6 +50,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   let playPattern = -1;
   let playStep = -1;
   let playArr = -1;
+  const modOpen = new Set<number>();
 
   root.innerHTML = `
     <div class="seq-bar">
@@ -96,6 +100,14 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     setTimeout(() => deps.send({ type: "trackNoteOff", track, note }), 220);
   }
 
+  function modSection(t: Song["tracks"][number], i: number, lib: LibraryEntry[]): string {
+    const inst = lib.find((p) => p.id === t.patch)?.instrument;
+    const open = modOpen.has(i) ? " open" : "";
+    if (inst?.kind !== "engine") return `<details class="modp" data-mod-t="${i}"${open}><summary>Modulation</summary><p class="hint">The LFO and modulation matrix act on the engine instruments (not FM6 or DRUM).</p></details>`;
+    const labels = engineById(inst.engine)?.def.edit.map((d) => d.label) ?? [];
+    return `<details class="modp" data-mod-t="${i}"${open}><summary>Modulation${t.mod ? " &bull;" : ""}</summary>${modPanelHtml(t.mod ?? defaultMod(), labels)}</details>`;
+  }
+
   function renderTracks(): void {
     const lib = deps.library();
     $("sq-tracks").innerHTML = song.tracks
@@ -114,7 +126,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
               ? `<label>Mix<input type="range" data-mix="imix" min="0" max="127" value="${t.imix}"></label>` +
                 (["ia", "ib", "ic"] as const).map((k, n) => `<label>${insertLabels(t.itype)[n]}<input type="range" data-mix="${k}" min="0" max="127" value="${t[k]}"></label>`).join("")
               : ""
-          }</div></div>`;
+          }</div>${modSection(t, i, lib)}</div>`;
       })
       .join("");
   }
@@ -235,9 +247,33 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     if (chip) { arrSel = Number(chip.dataset.a); pat = song.arrangement[arrSel]; renderAll(); return; }
   });
 
+  root.addEventListener("toggle", (e) => {
+    const d = e.target as HTMLDetailsElement;
+    if (d.dataset?.modT === undefined) return;
+    const i = Number(d.dataset.modT);
+    if (d.open) modOpen.add(i); else modOpen.delete(i);
+  }, true);
+
   root.addEventListener("input", (e) => {
     const el = e.target as HTMLInputElement;
     const trk = el.closest<HTMLElement>(".trk");
+    if (trk && el.closest(".modp")) {
+      const i = Number(trk.dataset.t);
+      if (el.dataset.live) {
+        const v = Number(el.value);
+        deps.send(el.dataset.live === "at"
+          ? { type: "midi", track: i, status: 0xd0, d1: v, d2: 0 }
+          : { type: "midi", track: i, status: 0xb0, d1: Number(el.dataset.live), d2: v });
+        return;
+      }
+      song.tracks[i].mod ??= defaultMod();
+      if (applyModInput(song.tracks[i].mod!, el)) {
+        const out = el.parentElement?.querySelector("output");
+        if (out && el.type === "range" && el.dataset.mod) out.textContent = el.value;
+        commit();
+      }
+      return;
+    }
     if (trk && el.dataset.mix) {
       (song.tracks[Number(trk.dataset.t)] as unknown as Record<string, number>)[el.dataset.mix] = Number(el.value);
       commit();

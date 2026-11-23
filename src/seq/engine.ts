@@ -12,6 +12,13 @@ interface PendingOff {
   notes: number[];
 }
 
+interface PendingOn {
+  frames: number;
+  synth: Synth;
+  notes: number[];
+  vel: number;
+}
+
 export interface EngineTrack {
   synth: Synth;
   mute: boolean;
@@ -44,6 +51,7 @@ export class Engine {
   onStep?: (pattern: number, step: number, arrPos: number) => void;
   private framesToStep = 0;
   private pending: PendingOff[] = [];
+  private late: PendingOn[] = [];
   // effects
   private bus = new FxBus();
   private master = new Master();
@@ -68,6 +76,7 @@ export class Engine {
     this.live = live;
     this.song = song;
     this.fxs = this.makeFx(song);
+    this.applyTracks();
   }
 
   get bpm(): number { return this.song.bpm; }
@@ -79,6 +88,7 @@ export class Engine {
   addTrack(synth: Synth): EngineTrack {
     const t = { synth, mute: false };
     this.tracks.push(t);
+    this.applyTracks();
     return t;
   }
 
@@ -96,17 +106,35 @@ export class Engine {
     s.gain = old.gain;
     if (track < 0) this.live = s;
     else this.tracks[track].synth = s;
+    this.applyTracks();
   }
 
   /** Replaces the song while it plays; the position stays valid. */
   setSong(song: Song): void {
     this.song = song;
     this.fxs = this.makeFx(song);
+    this.applyTracks();
     this.patternIndex = Math.min(this.patternIndex, song.patterns.length - 1);
     this.arrPos = Math.min(this.arrPos, song.arrangement.length - 1);
     const len = this.currentPattern().length;
     if (this.stepInPattern >= len) this.stepInPattern = 0;
     this.tracks.forEach((t, i) => (t.mute = !!song.tracks[i]?.mute));
+  }
+
+  /** Hands every track's synth its mix, modulation setup and the tempo. */
+  private applyTracks(): void {
+    this.tracks.forEach((t, i) => {
+      const s = this.song.tracks[i];
+      t.synth.setBpm?.(this.song.bpm);
+      if (s) { t.synth.setMix?.(s); t.synth.setMod?.(s.mod); }
+    });
+    this.live.setMix?.(this.liveMix);
+    this.live.setBpm?.(this.song.bpm);
+  }
+
+  /** A live controller (mod wheel, aftertouch, expression) for one track, or the keyboard (track -1). */
+  midi(track: number, status: number, d1: number, d2: number): void {
+    (track < 0 ? this.live : this.tracks[track]?.synth)?.midi?.(status, d1, d2);
   }
 
   private currentPatternIndex(): number {
@@ -128,6 +156,7 @@ export class Engine {
   stop(): void {
     this.playing = false;
     this.pending = [];
+    this.late = [];
     for (const t of this.tracks) t.synth.allOff();
   }
 
@@ -144,8 +173,12 @@ export class Engine {
       const t = this.tracks[ti];
       const st: Step = pat.steps[ti]?.[this.stepInPattern] ?? null;
       if (t.mute || !st) continue;
-      for (const n of st.notes) t.synth.noteOn(n, st.vel ?? 100);
-      const frames = Math.max(1, Math.round(this.stepFrames(this.stepIndex) * (st.gate ?? 0.9)));
+      const vel = st.vel ?? 100;
+      const period = this.stepFrames(this.stepIndex);
+      const delay = t.synth.stepDelay?.(st.notes[0], vel, period) ?? 0;
+      if (delay > 0) this.late.push({ frames: delay, synth: t.synth, notes: st.notes, vel });
+      else for (const n of st.notes) t.synth.noteOn(n, vel);
+      const frames = delay + Math.max(1, Math.round(period * (st.gate ?? 0.9)));
       this.pending.push({ frames, synth: t.synth, notes: st.notes });
     }
     this.framesToStep = this.stepFrames(this.stepIndex);
@@ -169,19 +202,28 @@ export class Engine {
       let n = CTL - pos;
       if (this.playing) n = Math.min(n, this.framesToStep);
       for (const p of this.pending) n = Math.min(n, p.frames);
+      for (const p of this.late) n = Math.min(n, p.frames);
       n = Math.max(1, n);
       this.live.render(live, pos, n);
       this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], pos, n));
       pos += n;
       if (this.playing) this.framesToStep -= n;
       for (const p of this.pending) p.frames -= n;
+      for (const p of this.late) p.frames -= n;
+      for (const p of this.late) if (p.frames <= 0) for (const note of p.notes) p.synth.noteOn(note, p.vel);
+      this.late = this.late.filter((p) => p.frames > 0);
       for (const p of this.pending) if (p.frames <= 0) for (const note of p.notes) p.synth.noteOff(note);
       this.pending = this.pending.filter((p) => p.frames > 0);
     }
   }
 
   /** One source into the dry mix and the sends (fx.c mix_part). */
-  private mixSource(src: Float32Array, index: number, m: MixSetup): void {
+  private mixSource(src: Float32Array, index: number, base: MixSetup, synth?: Synth): void {
+    let m = base;
+    const mm = synth?.mixMod;
+    if (mm && (mm.pan !== base.pan || mm.dist !== base.dist || mm.chorus !== base.chorus || mm.delay !== base.delay || mm.reverb !== base.reverb)) {
+      m = { ...base, pan: mm.pan, dist: mm.dist, chorus: mm.chorus, delay: mm.delay, reverb: mm.reverb };
+    }
     const b = this.ibuf;
     for (let i = 0; i < CTL; i++) b[i] = Math.round(src[i] * 32768);
     (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
@@ -206,14 +248,15 @@ export class Engine {
   }
 
   private produceBlock(): void {
+    this.tracks.forEach((t, i) => { const s = this.song.tracks[i]; if (s) t.synth.setMix?.(s); });
+    this.live.setMix?.(this.liveMix);
     this.renderSources();
     this.sendC.fill(0); this.sendD.fill(0); this.sendR.fill(0); this.mixL.fill(0); this.mixR.fill(0);
     this.tracks.forEach((t, i) => {
       const setup = this.song.tracks[i];
-      this.mixSource(this.tbuf[i], i, setup ?? defaultMix());
-      void t;
+      this.mixSource(this.tbuf[i], i, setup ?? defaultMix(), t.synth);
     });
-    this.mixSource(this.tbuf[this.tracks.length], this.tracks.length, this.liveMix);
+    this.mixSource(this.tbuf[this.tracks.length], this.tracks.length, this.liveMix, this.live);
     this.bus.process(this.fxs, this.sendC, this.sendD, this.sendR, this.wet, CTL);
     if (this.bus.side) this.bus.sideMix(this.mixL, this.mixR, CTL);
     const mg = this.masterQ12;

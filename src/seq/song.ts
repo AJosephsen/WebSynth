@@ -1,4 +1,5 @@
 import { defaultInsert, InsertSetup } from "../fx/insert";
+import { ModSetup, sanitizeMod } from "../mod/setup";
 /** One step: notes (a chord), velocity 1..127 and gate length in steps. null = rest. */
 export type Step = { notes: number[]; vel?: number; gate?: number } | null;
 
@@ -24,6 +25,8 @@ export interface MixSetup extends InsertSetup {
 export interface TrackSetup extends MixSetup {
   patch: string; // instrument id (see instruments.ts); kept by name so a song survives a library change
   mute: boolean;
+  /** The LFO and modulation matrix of the track (engine instruments). */
+  mod?: ModSetup;
 }
 
 export const defaultMix = (): MixSetup => ({ level: 112, pan: 0, dist: 0, chorus: 0, delay: 0, reverb: 0, ...defaultInsert() });
@@ -101,6 +104,7 @@ export function sanitizeSong(raw: unknown): Song | null {
       ia: Math.round(clamp(t?.ia, 0, 127, d.ia)),
       ib: Math.round(clamp(t?.ib, 0, 127, d.ib)),
       ic: Math.round(clamp(t?.ic, 0, 127, d.ic)),
+      mod: sanitizeMod(t?.mod),
     };
   });
   const f = (s.fx ?? {}) as Partial<SongFx>;
