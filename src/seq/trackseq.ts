@@ -3,6 +3,7 @@
 // chance or condition of a step. It advances in blocks of CTL samples, as the firmware does. See NOTICE.
 import { clamp } from "../engines/dsp";
 import { divSamples } from "../synth/arp";
+import { ClockGrid, clockPeriod, clockScale } from "./midiclock";
 
 export const ST_NOTE = 0, ST_TIE = 1, ST_REST = 2;
 export const COND_FIRST = 102, NCOND = 11, COND_FILL = 10, COND_NFILL = 11;
@@ -275,6 +276,15 @@ export class TrackSeq {
     if (this.pos < (hits - this.ratLeft) * Math.floor(this.stepSamples(period, this.idx) / hits)) return;
     this.ratLeft--;
     this.step(s, this.idx, period, SEQ_REP);
+  }
+
+  /** The tempo changed under a running external clock: positions keep their fractional phase (midi_clock_pulse). */
+  rescale(oldBeat: number, newBeat: number, grid: ClockGrid): void {
+    const oldP = clockPeriod(oldBeat, this.p.div), newP = clockPeriod(newBeat, this.p.div);
+    if (this.pos < 0x7fffffff) this.pos = grid.scalePhase(this.pos, newP, oldP);
+    if (this.off) this.off = clockScale(this.off, newP, oldP);
+    if (this.ndLate) this.ndLate = clockScale(this.ndLate - 1, newP, oldP) + 1;
+    if (this.ndEarly) this.ndEarly = clockScale(this.ndEarly - 1, newP, oldP) + 1;
   }
 
   /** The samples one pass through the pattern takes (the swung lengths of its steps). */

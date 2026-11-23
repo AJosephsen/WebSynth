@@ -13,8 +13,12 @@ export class PolySynth {
   private clock = 0;
   gain = 1;
 
+  private readonly bendRef = { target: 0 };
+  /** The pitch wheel, in 1/256 semitone. */
+  setBend(q8: number): void { this.bendRef.target = q8; }
+
   constructor(patch: Uint8Array, voices = 8) {
-    this.slots = Array.from({ length: voices }, () => ({ voice: new Fm6Voice(patch), note: -1, held: false, age: 0 }));
+    this.slots = Array.from({ length: voices }, () => { const voice = new Fm6Voice(patch); voice.bendRef = this.bendRef; return { voice, note: -1, held: false, age: 0 }; });
   }
 
   setPatch(patch: Uint8Array): void {

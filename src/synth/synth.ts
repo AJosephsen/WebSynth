@@ -29,6 +29,10 @@ export interface Synth {
   /** The mix values of the block last rendered, modulated. Undefined: the matrix does not touch them. */
   readonly mixMod?: { pan: number; dist: number; chorus: number; delay: number; reverb: number };
   setBpm?(bpm: number): void;
+  /** A MIDI-learned controller sets a track parameter. */
+  learnParam?(id: number, v: number): void;
+  /** The pitch wheel, in 1/256 semitone. */
+  setBend?(q8: number): void;
   /** Parameters the sequencer's locks and automation can move. */
   readonly paramStore?: import("../seq/motion").ParamStore;
   /** A step's slide: the next legato note glides. */

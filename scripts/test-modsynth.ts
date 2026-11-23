@@ -246,5 +246,92 @@ void m5; void lr;
   check(peak(buf.subarray(0, 22050)) > 0.01 && buf.every(Number.isFinite), "ADPCM sounds through the voice host");
   check(peak(late) > 0.0005, `the ADPCM echo rings on after the note (peak ${peak(late).toFixed(4)})`);
 }
+// an external MIDI clock drives the sequencer, follows a tempo change and stops when the cable goes
+{
+  const sg = song();
+  for (let i = 0; i < 16; i++) sg.patterns[0].steps[0][i] = { notes: [60 + i] };
+  sg.patterns[0] = { ...sg.patterns[0], length: 16 };
+  const e = createEngine(44100, sg, factoryInstrument);
+  e.mode = "pattern";
+  e.setClockMode(1);
+  let steps = 0;
+  e.onStep = () => steps++;
+  const l = new Float32Array(32), r = new Float32Array(32);
+  let nextPulse = 0, bpm = 120, pulses = 0;
+  const run = (ms: number, send = true): void => {
+    const end = e.nowMs + ms;
+    while (e.nowMs < end) {
+      while (send && nextPulse <= e.nowMs) { e.clockPulse(); pulses++; nextPulse += 60000 / (bpm * 24); }
+      e.renderStereo(l, r);
+    }
+  };
+  nextPulse = e.nowMs;
+  e.clockTransport(0xfa);
+  run(2000); // four beats at 120
+  check(steps >= 15 && steps <= 17, `the sequencer follows the clock: 16 steps in 4 beats (${steps})`);
+  check(e.clock.bpm >= 118 && e.clock.bpm <= 122, `the tempo is measured (${e.clock.bpm})`);
+  bpm = 90;
+  nextPulse = e.nowMs;
+  const before = steps;
+  run(2666); // four beats at 90
+  check(Math.abs(steps - before - 16) <= 2, `it follows a tempo change (${steps - before} steps in 4 beats at 90)`);
+  check(e.clock.bpm >= 88 && e.clock.bpm <= 92, `the new tempo is measured (${e.clock.bpm})`);
+  run(700, false); // the clock goes away
+  check(!e.playing && e.clockLost, "the song stops when the clock stops arriving");
+  void pulses;
+}
+// MIDI in: the pedal sustains, the wheel bends, a channel plays its track, a learned controller moves a parameter
+{
+  const mk = (): { e: Engine; l: Float32Array; r: Float32Array } => {
+    const sg = song();
+    const e = createEngine(44100, sg, factoryInstrument);
+    return { e, l: new Float32Array(32 * 400), r: new Float32Array(32 * 400) };
+  };
+  // pedal: a released note rings until the pedal goes up
+  {
+    const { e, l, r } = mk();
+    e.midiIn(0xb0, 64, 127);
+    e.midiIn(0x90, 60, 100);
+    e.midiIn(0x80, 60, 0);
+    e.renderStereo(l.subarray(0, 32 * 100), r.subarray(0, 32 * 100));
+    const held = e.live.activeVoices;
+    e.midiIn(0xb0, 64, 0);
+    for (let i = 0; i < 40; i++) e.renderStereo(l.subarray(0, 32 * 100), r.subarray(0, 32 * 100));
+    check(held === 1 && e.live.activeVoices === 0, `the sustain pedal holds a released note (${held} voice, then ${e.live.activeVoices})`);
+  }
+  // wheel: the pitch moves
+  {
+    const a = mk(), b = mk();
+    for (const x of [a, b]) { x.e.midiIn(0x90, 60, 100); }
+    b.e.midiIn(0xe0, 0x7f, 0x7f);
+    a.e.renderStereo(a.l.subarray(0, 32 * 100), a.r.subarray(0, 32 * 100));
+    b.e.renderStereo(b.l.subarray(0, 32 * 100), b.r.subarray(0, 32 * 100));
+    check(diff(a.l.subarray(0, 3200), b.l.subarray(0, 3200)) > 1, "the pitch wheel bends the note");
+  }
+  // channel route: channel 2 plays track 2
+  {
+    const { e } = mk();
+    e.midiRoute = 1;
+    const played: number[] = [];
+    const t1 = e.tracks[1].synth;
+    const orig = t1.noteOn.bind(t1);
+    t1.noteOn = (n: number, v?: number) => { played.push(n); orig(n, v); };
+    e.midiIn(0x91, 62, 90);
+    e.midiIn(0x95, 64, 90); // channel 6: not heard
+    check(played.join() === "62" && e.live.activeVoices === 0, `channel 2 plays track 2 (${played})`);
+  }
+  // learn: the next controller is set to a parameter
+  {
+    const { e, l, r } = mk();
+    const learned: number[] = [];
+    e.onLearned = (cc) => learned.push(cc);
+    e.learn(0, 12); // P_PAN of track 1
+    e.midiIn(0xb0, 74, 0);
+    e.midiIn(0xb0, 74, 127);
+    e.renderStereo(l.subarray(0, 32), r.subarray(0, 32));
+    const pan = e.tracks[0].synth.paramStore!.read(12);
+    check(learned.join() === "74" && pan === 63, `a learned controller moves its parameter (learned ${learned}, pan ${pan})`);
+  }
+}
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");

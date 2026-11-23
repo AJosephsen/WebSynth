@@ -144,6 +144,9 @@ export class Fm6Voice {
   private blockOut = new Float32Array(CTL);
   private midi = 60;
   patch: Uint8Array;
+  /** The pitch wheel's target (1/256 semitone), shared by a synth's voices; each voice follows it in a few ms. */
+  bendRef = { target: 0 };
+  private bendQ8 = 0;
 
   constructor(patch: Uint8Array) {
     this.patch = patch;
@@ -175,7 +178,11 @@ export class Fm6Voice {
     if (!n.live) return;
     const p = this.patch;
     const alg = p[FP.ALG];
-    const lf = logFreq(this.midi * 16 + (p[FP.TRNSP] - 24) * 16);
+    const d = this.bendRef.target - this.bendQ8;
+    this.bendQ8 += d > 0 ? (d < 4 ? d : Math.trunc((d + 3) / 4)) : d > -4 ? d : Math.trunc((d - 3) / 4);
+    const bend = this.bendQ8;
+    const bend16 = bend >= 0 ? Math.trunc(bend / 16) : -Math.trunc((-bend + 15) / 16);
+    const lf = logFreq(this.midi * 16 + (p[FP.TRNSP] - 24) * 16 + bend16, Math.trunc(((bend - bend16 * 16) * 2367) / 2560));
     const ok = n.compute(p, this.bus, this.lfo.sample(), this.lfo.delay(), lf, alg, p[FP.FB]);
     if (ok) {
       for (let i = 0; i < CTL; i++) {

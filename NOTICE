@@ -41,5 +41,6 @@ src/seq/motion.ts: TypeScript port of Felucca's step automation and parameter lo
 src/fx/slicer.ts: TypeScript port of Felucca's SLICER insert (slicer.c: tempo-synced 16-step gate / stutter; GPL-3.0-only).
 src/adpcm/dsp.ts: TypeScript port of Felucca's adpcm_dsp.c, itself a C port of snes_spc 0.9.0 (SPC_DSP.cpp, Copyright (C) 2007 Shay Green; LGPL-2.1-or-later). src/adpcm/engine.ts, src/adpcm/data.ts: port of Felucca's eng_adpcm.c and its generated waves (tools/gen_adpcm.py; GPL-3.0-only).
 src/sampler/user.ts: TypeScript port of Felucca's user sample pipeline (tools/sampleio.py; GPL-3.0-only).
+src/seq/midiclock.ts: TypeScript port of Felucca's external MIDI clock follower (midi_clock.c, adapted there from contributions by ChanceTheMaker and keremimo; GPL-3.0-only). The MIDI channel controls and controller learn follow midi_control.c and midi_learn.c (adapted from a contribution by ChanceTheMaker).
 src/mod/mod.ts: TypeScript port of Felucca's modulation matrix (mod.c) and track LFO (voice.c: waves, SYNC, FADE, S&H, SLEW; GPL-3.0-only).
 tests/ins-gold.txt is reference output of that code.

@@ -150,11 +150,18 @@ export class Arp {
     this.note = 0;
   }
 
+  /** The tempo changed under an external clock: the running phase keeps its fraction. */
+  rescale(oldBeat: number, newBeat: number, scalePhase: (v: number, np: number, op: number) => number, scale: (v: number, np: number, op: number) => number, period: (q: number, d: number) => number): void {
+    const oldP = period(oldBeat, this.p.rate), newP = period(newBeat, this.p.rate);
+    if (this.pos < 0xfffffff) this.pos = scalePhase(this.pos, newP, oldP);
+    if (this.off) this.off = scale(this.off, newP, oldP);
+  }
+
   /** Advances the arp by n samples (the tempo's quarter note is `quarter` samples). */
-  step(n: number, quarter: number): void {
+  step(n: number, quarter: number, gateN = n): void {
     if (this.note) {
-      if (this.off <= n) this.stop();
-      else this.off -= n;
+      if (this.off <= gateN) this.stop();
+      else this.off -= gateN;
     }
     if (!this.p.mode || !this.held.length) {
       if (!this.held.length && this.note) this.stop();

@@ -10,6 +10,8 @@ import { PF_NAMES } from "./fx/perform";
 import { ARP_MODES, ARP_RATES } from "./synth/arp";
 import { CHORD_NAMES, SCALE_NAMES, VOICING_NAMES } from "./synth/chord";
 import { defaultInput } from "./synth/noteinput";
+import { MParam, motionParams } from "./seq/params";
+import { engineById } from "./engines/registry";
 import { buildUserSlot, sampleFromWav, SLOT_MAX_DATA } from "./sampler/user";
 import type { Zone } from "./sampler/base";
 import { defaultMod, ModSetup } from "./mod/setup";
@@ -48,6 +50,15 @@ app.innerHTML = `
           <label class="kc"><span>Key</span><select data-in="chord.root">${["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
           <label class="kc"><span>Scale</span><select data-in="chord.scale">${SCALE_NAMES.map((n, i) => `<option value="${i}"${i === 1 ? " selected" : ""}>${n}</option>`).join("")}</select></label>
         </div>
+      </section>
+      <section class="module"><h4>MIDI <small>(channel routing and controller learn; the clock is on the Sequencer tab)</small></h4>
+        <div class="knobs" id="midictl">
+          <label class="kc"><span>MIDI in</span><select id="midi-route"><option value="0">Keyboard (all channels)</option><option value="1">Channels 1-4 play tracks 1-4</option></select></label>
+          <label class="kc"><span>Learn for</span><select id="learn-target"><option value="-1">Live keyboard</option>${[0, 1, 2, 3].map((k) => `<option value="${k}">Track ${k + 1}</option>`).join("")}</select></label>
+          <label class="kc"><span>Parameter</span><select id="learn-param"></select></label>
+          <button id="learn-arm">Learn CC</button><output id="learn-info"></output>
+        </div>
+        <div class="mrecs" id="learn-list"></div>
       </section>
       <section class="module"><h4>Samples <small>(your own WAV files for the SAMPLE, GRAIN and SLICE engines: choose SET / SRC USR1..USR3)</small></h4>
         <div class="knobs" id="usr">${[0, 1, 2].map((k) => `<div class="kc usr"><span>USR${k + 1}</span><output id="usr-info${k}">empty</output><label class="file">Load WAVs <input type="file" accept=".wav,audio/wav" multiple data-usr="${k}"></label><button data-usr-clear="${k}">Clear</button></div>`).join("")}</div>
@@ -249,6 +260,58 @@ $<HTMLInputElement>("pf-latch").addEventListener("change", (ev) => {
 });
 $("pf-off").addEventListener("click", () => { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); });
 
+// ---- MIDI: routing and controller learn ----
+let midiRoute = 0;
+interface LearnMap { cc: number; track: number; param: number }
+let learnMap: LearnMap[] = [];
+try { learnMap = JSON.parse(localStorage.getItem("websynth.learn.v1") ?? "[]"); } catch { /* storage unavailable */ }
+const saveLearn = (): void => { try { localStorage.setItem("websynth.learn.v1", JSON.stringify(learnMap)); } catch { /* unavailable */ } };
+$<HTMLSelectElement>("midi-route").addEventListener("change", (ev) => {
+  midiRoute = Number((ev.target as HTMLSelectElement).value);
+  node?.port.postMessage({ type: "midiRoute", route: midiRoute });
+});
+function learnParams(): MParam[] {
+  const t = Number($<HTMLSelectElement>("learn-target").value);
+  const inst = t < 0 ? current.instrument : seq.trackInstrument(t);
+  return motionParams(inst?.kind === "engine" ? engineById(inst.engine)?.def : undefined);
+}
+function fillLearn(): void {
+  const sel = $<HTMLSelectElement>("learn-param");
+  const keep = sel.value;
+  sel.innerHTML = learnParams().map((p) => `<option value="${p.id}">${p.label}</option>`).join("");
+  if (keep) sel.value = keep;
+  $("learn-list").innerHTML = learnMap.map((m, i) => `<span class="chip">CC ${m.cc} → ${m.track < 0 ? "live" : "track " + (m.track + 1)} · ${learnLabel(m)} <button data-learn-del="${i}">×</button></span>`).join("");
+}
+function learnLabel(m: LearnMap): string {
+  const inst = m.track < 0 ? current.instrument : seq.trackInstrument(m.track);
+  const list = motionParams(inst?.kind === "engine" ? engineById(inst.engine)?.def : undefined);
+  return list.find((p) => p.id === m.param)?.label ?? `param ${m.param}`;
+}
+$("learn-target").addEventListener("change", fillLearn);
+$("learn-arm").addEventListener("click", () => {
+  $("learn-info").textContent = "move a controller…";
+  node?.port.postMessage({ type: "learn", track: Number($<HTMLSelectElement>("learn-target").value), param: Number($<HTMLSelectElement>("learn-param").value) });
+});
+$("learn-list").addEventListener("click", (ev) => {
+  const b = (ev.target as HTMLElement).closest<HTMLElement>("[data-learn-del]");
+  if (!b) return;
+  learnMap.splice(Number(b.dataset.learnDel), 1);
+  saveLearn(); node?.port.postMessage({ type: "learnMap", map: learnMap }); fillLearn();
+});
+function onWorkletMessage(m: { type: string; [k: string]: unknown }): boolean {
+  if (m.type === "learned") {
+    const e = { cc: m.cc as number, track: m.track as number, param: m.param as number };
+    learnMap = learnMap.filter((x) => x.cc !== e.cc && !(x.track === e.track && x.param === e.param));
+    learnMap.push(e);
+    saveLearn(); fillLearn();
+    $("learn-info").textContent = `CC ${e.cc} learned`;
+    return true;
+  }
+  return false;
+}
+
+fillLearn();
+
 // ---- user samples ----
 interface StoredSlot { zones: Zone[]; data: string; info: string }
 const SAMPLE_KEY = "websynth.samples.v1";
@@ -380,8 +443,12 @@ async function connectMidi(): Promise<void> {
       input.onmidimessage = (m) => {
         const [st, d1, d2] = m.data!;
         const cmd = st & 0xf0;
-        if (cmd === 0x90 && d2 > 0) noteOn(d1, d2);
-        else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1);
+        if (st >= 0xf8) { if (st === 0xf8 || st >= 0xfa) node?.port.postMessage({ type: "clock", status: st }); return; }
+        node?.port.postMessage({ type: "midiIn", status: st, d1, d2: d2 ?? 0 });
+        if (midiRoute === 0) { // the on-screen keys follow
+          if (cmd === 0x90 && d2 > 0) { lit(d1, true); lcdNote(`${noteName(d1)}  v${d2}`); }
+          else if (cmd === 0x80 || cmd === 0x90) lit(d1, false);
+        }
       };
     });
     hook();
@@ -400,7 +467,9 @@ startBtn.onclick = async () => {
   choose(current);
   node.port.postMessage({ type: "liveMod", mod: liveMod });
   for (let k = 0; k < 3; k++) if (slots[k]) sendSlot(k);
-  node.port.onmessage = (e) => seq.onMessage(e.data);
+  node.port.postMessage({ type: "learnMap", map: learnMap });
+  node.port.postMessage({ type: "midiRoute", route: midiRoute });
+  node.port.onmessage = (e) => { if (!onWorkletMessage(e.data)) seq.onMessage(e.data); };
   seq.sync();
   startBtn.disabled = true;
   select.disabled = false;

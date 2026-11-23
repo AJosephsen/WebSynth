@@ -4,11 +4,14 @@ import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Insert } from "../fx/insert";
 import { Perform } from "../fx/perform";
 import { Slicer, SlicerSetting } from "../fx/slicer";
-import { NoteInput } from "../synth/noteinput";
+import { defaultInput, NoteInput } from "../synth/noteinput";
+import { motionParams } from "./params";
+import { engineById } from "../engines/registry";
 import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
 import { LANE_DEFAULT, LANE_SILENT, MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
+import { ClockGrid, MidiClock, clockPeriod, clockScale } from "./midiclock";
 import { Motion } from "./motion";
 import { SeqStep, ST_NOTE, ST_REST, ST_TIE, TrackSeq } from "./trackseq";
 
@@ -53,6 +56,21 @@ export class Engine {
   readonly motions: Motion[];
   private patPos = 0;
   private justStarted = false;
+  // external MIDI clock (midi_clock.c)
+  /** 0 the song's tempo, 1 a MIDI clock in. */
+  clockMode = 0;
+  readonly clock = new MidiClock();
+  /** Audio time in whole ms, the timestamp of the clock pulses. */
+  nowMs = 0;
+  /** The clock stopped arriving while the song played (the song stopped). */
+  clockLost = false;
+  /** Called when the measured tempo changes. */
+  onTempo?: (bpm: number) => void;
+  private lastBpm = 0;
+  private units = 0;
+  private readonly seqGrids = Array.from({ length: 4 }, () => new ClockGrid());
+  private readonly arpGrid = new ClockGrid();
+  private readonly patGrid = new ClockGrid();
   // effects
   private bus = new FxBus();
   private master = new Master();
@@ -63,6 +81,17 @@ export class Engine {
   readonly perform = new Perform();
   /** The live keyboard's input: chord keys and the arpeggiator. */
   readonly liveInput = new NoteInput(() => this.live);
+  /** The tracks' note inputs (MIDI channels that play a track go through them). */
+  readonly trackInputs: NoteInput[] = Array.from({ length: TRACKS }, (_, i) => new NoteInput(() => this.tracks[i].synth));
+  private readonly trackArpGrids = Array.from({ length: TRACKS }, () => new ClockGrid());
+  /** MIDI in: 0 every channel plays the live keyboard, 1 channels 1-4 play tracks 1-4. */
+  midiRoute = 0;
+  private readonly midiCh = Array.from({ length: 16 }, () => ({ pedal: false, held: new Set<number>(), semis: 2, cents: 0, rpnMsb: 127, rpnLsb: 127 }));
+  /** MIDI learn: a controller set to a parameter of a track (-1: the live keyboard). */
+  learnMap: { cc: number; track: number; param: number }[] = [];
+  private learning: { track: number; param: number } | null = null;
+  /** Called when a controller was learned. */
+  onLearned?: (cc: number, track: number, param: number) => void;
   private fxs: FxSettings;
   // output FIFO
   private fifoL = new Float32Array(CTL);
@@ -89,7 +118,48 @@ export class Engine {
     this.applyTracks();
   }
 
-  get bpm(): number { return this.song.bpm; }
+  get bpm(): number { return this.clockMode && this.clock.bpm ? this.clock.bpm : this.song.bpm; }
+
+  /** Samples in a quarter note: the measured one while an external clock runs. */
+  private quarter(): number {
+    return this.clockMode && this.clock.beatSamples ? this.clock.beatSamples : Math.round((this.sampleRate * 60) / this.song.bpm);
+  }
+
+  /** Follow the song's tempo (0) or a MIDI clock in (1). */
+  setClockMode(mode: number): void {
+    if (mode === this.clockMode) return;
+    this.stop();
+    this.clock.reset();
+    this.clockMode = mode;
+    this.clockLost = false;
+  }
+
+  /** A MIDI clock pulse (0xF8) arrived. */
+  clockPulse(): void {
+    if (!this.clockMode) return;
+    const ms = Math.floor(this.nowMs);
+    this.clock.pulse(ms, this.quarter(), this.sampleRate, this.playing, (oldBeat, newBeat) => {
+      this.seqs.forEach((seq, i) => seq.rescale(oldBeat, newBeat, this.seqGrids[i]));
+      this.liveInput.rescale(oldBeat, newBeat, this.arpGrid);
+    }, () => {
+      const q = this.quarter();
+      for (const s of this.seqs) s.tick(0, q);
+      this.liveInput.firstPulse(q);
+    });
+    if (this.clock.bpm && this.clock.bpm !== this.lastBpm) { this.lastBpm = this.clock.bpm; this.onTempo?.(this.clock.bpm); }
+  }
+
+  /** A MIDI transport message (0xFA start, 0xFB continue, 0xFC stop) arrived. */
+  clockTransport(status: number): void {
+    if (!this.clockMode) return;
+    const r = this.clock.transport(status, Math.floor(this.nowMs));
+    if (r === "start") this.play();
+    else if (r === "continue") {
+      if (!this.playing) for (const m of this.motions) m.begin();
+      this.playing = true;
+      for (const s of this.seqs) s.playing = true;
+    } else if (r === "stop") this.stop();
+  }
 
   private makeFx(song: Song): FxSettings {
     return { bpm: song.bpm, ...song.fx };
@@ -131,10 +201,100 @@ export class Engine {
       const s = this.song.tracks[i];
       t.synth.setBpm?.(this.song.bpm);
       if (s) { t.synth.setMix?.(s); t.synth.setMod?.(s.mod); }
+      this.trackInputs[i]?.set(s?.input ?? defaultInput());
     });
     this.live.setMix?.(this.liveMix);
     this.live.setMod?.(this.liveMod);
     this.live.setBpm?.(this.song.bpm);
+  }
+
+  /** The note input and synth a MIDI channel plays, null: the channel is not heard. */
+  private channelTarget(ch: number): { input: NoteInput; synth: Synth; track: number } | null {
+    if (this.midiRoute === 0) return { input: this.liveInput, synth: this.live, track: -1 };
+    const t = this.tracks[ch];
+    return ch < TRACKS && t ? { input: this.trackInputs[ch], synth: t.synth, track: ch } : null;
+  }
+
+  private pedalUp(ch: number, tg: { input: NoteInput }): void {
+    const c = this.midiCh[ch];
+    c.pedal = false;
+    for (const n of c.held) tg.input.noteOff(n);
+    c.held.clear();
+  }
+
+  /** The controller numbers MIDI learn leaves to the engine. */
+  private static readonly RESERVED_CC = new Set([0, 1, 6, 11, 32, 38, 64, 98, 99, 100, 101, 120, 121, 123, 124, 125, 126, 127]);
+
+  /** Arms MIDI learn: the next free controller is set to this parameter of the track (-1: the live keyboard). null disarms. */
+  learn(track: number, param: number): void { this.learning = track < -1 ? null : { track, param }; }
+
+  private applyCc(map: { track: number; param: number }, value: number): void {
+    const synth = map.track < 0 ? this.live : this.tracks[map.track]?.synth;
+    if (!synth?.learnParam) return;
+    const range = this.paramRange(map.track, map.param);
+    synth.learnParam(map.param, range.min + Math.round((value * (range.max - range.min)) / 127));
+  }
+
+  private paramRange(track: number, param: number): { min: number; max: number } {
+    const synth = track < 0 ? this.live : this.tracks[track]?.synth;
+    const defName = (synth as unknown as { engineName?: string })?.engineName;
+    const list = motionParams(defName ? engineById(defName)?.def : undefined);
+    const p = list.find((x) => x.id === param);
+    return p ? { min: p.min, max: p.max } : { min: 0, max: 127 };
+  }
+
+  /** A MIDI channel message: notes, pedal, wheel, aftertouch, controllers (the shared channel controls of midi_control.c). */
+  midiIn(status: number, d1: number, d2: number): void {
+    const st = status & 0xf0, ch = status & 0x0f;
+    const tg = this.channelTarget(ch);
+    const c = this.midiCh[ch];
+    if (st === 0xb0 && this.learning && !Engine.RESERVED_CC.has(d1)) {
+      const l = this.learning;
+      this.learnMap = this.learnMap.filter((m) => m.cc !== d1 && !(m.track === l.track && m.param === l.param));
+      this.learnMap.push({ cc: d1, track: l.track, param: l.param });
+      this.learning = null;
+      this.onLearned?.(d1, l.track, l.param);
+      return;
+    }
+    if (st === 0xb0) {
+      const m = this.learnMap.find((x) => x.cc === d1);
+      if (m && !Engine.RESERVED_CC.has(d1)) { this.applyCc(m, d2); return; }
+    }
+    if (!tg) return;
+    const kit = !!tg.synth.keyKit;
+    if (st === 0x90 && d2 > 0) {
+      if (c.held.delete(d1)) tg.input.noteOff(d1);
+      tg.input.noteOn(d1, d2);
+    } else if (st === 0x80 || st === 0x90) {
+      if (c.pedal && !kit) c.held.add(d1);
+      else tg.input.noteOff(d1);
+    } else if (st === 0xe0) {
+      const v = (d1 | (d2 << 7)) - 8192;
+      const range = Math.trunc(((c.semis * 100 + c.cents) * 256) / 100);
+      if (!kit) tg.synth.setBend?.(Math.trunc((v * range) / (v < 0 ? 8192 : 8191)));
+    } else if (st === 0xd0) {
+      tg.synth.midi?.(0xd0, d1, 0);
+    } else if (st === 0xb0) {
+      switch (d1) {
+        case 1: case 11: tg.synth.midi?.(0xb0, d1, d2); break;
+        case 64: if (d2 >= 64) c.pedal = true; else this.pedalUp(ch, tg); break;
+        case 100: c.rpnLsb = d2; break;
+        case 101: c.rpnMsb = d2; break;
+        case 6: if (c.rpnMsb === 0 && c.rpnLsb === 0) c.semis = Math.min(24, d2); break;
+        case 38: if (c.rpnMsb === 0 && c.rpnLsb === 0) c.cents = Math.min(99, d2); break;
+        case 121: // RESET ALL CONTROLLERS
+          this.pedalUp(ch, tg);
+          tg.synth.midi?.(0xb0, 121, 0);
+          tg.synth.setBend?.(0);
+          c.semis = 2; c.cents = 0; c.rpnMsb = c.rpnLsb = 127;
+          break;
+        case 120: case 123: // ALL SOUND OFF / ALL NOTES OFF
+          this.pedalUp(ch, tg);
+          tg.input.allOff();
+          break;
+        default: break;
+      }
+    }
   }
 
   /** A live controller (mod wheel, aftertouch, expression) for one track, or the keyboard (track -1). */
@@ -207,6 +367,10 @@ export class Engine {
     this.arrPos = 0;
     this.patPos = 0;
     this.justStarted = true;
+    for (const g of this.seqGrids) g.remainder = 0;
+    this.arpGrid.remainder = 0;
+    this.patGrid.remainder = 0;
+    if (this.clockMode) this.clock.transport(0xfa, Math.floor(this.nowMs));
     this.applyPattern(false, 0);
     for (const s of this.seqs) s.start();
     for (const m of this.motions) m.begin();
@@ -221,12 +385,28 @@ export class Engine {
     for (const t of this.tracks) t.synth.allOff();
   }
 
-  /** The sequencers' block: the pattern clock (a new pattern when the longest track has played through), then every track. */
-  private advanceSequencers(): void {
+  /** The musical units of this block: CTL samples at the song's tempo, or what an external clock has delivered (0 while stopped). */
+  private blockUnits(): number {
+    if (!this.clockMode) return CTL;
+    if (!this.playing) return 0;
+    const now = Math.floor(this.nowMs);
+    const last = this.clock.havePulse ? this.clock.lastMs : this.clock.startMs;
+    if (now - last > 500) { // the cable is gone: never leave a held note running
+      this.stop();
+      this.clock.tempoValid = false;
+      this.clockLost = true;
+      return 0;
+    }
+    return this.clock.advance(now);
+  }
+
+  /** The sequencers' block: the pattern clock (a new pattern when the clock track has played through), then every track. */
+  private advanceSequencers(units: number): void {
     if (!this.playing) return;
-    const quarter = Math.round((this.sampleRate * 60) / this.song.bpm);
+    const quarter = this.quarter();
+    const patN = this.clockMode ? this.patGrid.advance(units, quarter, 0) : CTL;
     if (this.justStarted) this.justStarted = false;
-    else this.patPos += CTL;
+    else this.patPos += patN;
     const repeat = this.mode === "song" ? this.song.sections?.[this.arrPos]?.repeat ?? 1 : 1;
     const len = this.seqs[this.clockTrack()].patternSamples(quarter) * repeat;
     if (len > 0 && this.patPos >= len) {
@@ -235,7 +415,7 @@ export class Engine {
       if (this.mode === "song") this.arrPos = (this.arrPos + 1) % this.song.arrangement.length;
       this.applyPattern(true, carry);
     }
-    for (const s of this.seqs) s.tick(CTL, quarter);
+    this.seqs.forEach((s, i) => s.tick(this.clockMode ? this.seqGrids[i].advance(units, quarter, s.p.div) : CTL, quarter));
   }
 
   /** Renders the synths of one CTL block into per-source float buffers (tracks, then the live keyboard). */
@@ -243,7 +423,7 @@ export class Engine {
     const sources = this.tracks.length + 1;
     while (this.tbuf.length < sources) { this.tbuf.push(new Float32Array(CTL)); this.sidebuf.push(new Float32Array(CTL)); }
     for (let i = 0; i < sources; i++) { this.tbuf[i].fill(0); this.sidebuf[i].fill(0); }
-    this.advanceSequencers();
+    this.advanceSequencers(this.units);
     this.live.render(this.tbuf[this.tracks.length], 0, CTL, this.sidebuf[this.tracks.length]);
     this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], 0, CTL, this.sidebuf[i]));
   }
@@ -290,7 +470,7 @@ export class Engine {
     const sl = (this.slicers[index] ??= new Slicer());
     const ts = base as Partial<import("./song").TrackSetup>;
     const swing = Math.min(100, (this.song.tracks[index]?.seq?.swing ?? 0) + Math.min(100, Math.round(this.song.swing * 250)));
-    sl.process(ts.slicer ?? OFF_SLICER, b, CTL, this.song.bpm, swing, sd);
+    sl.process(ts.slicer ?? OFF_SLICER, b, CTL, this.bpm, swing, sd);
   }
 
   /** SPREAD (fx.c mix_spread): the voices start left and right of PAN in turn, at PAN -/+ SPRD / 2. b is every voice (mono), d left minus right. */
@@ -327,8 +507,22 @@ export class Engine {
   }
 
   private produceBlock(): void {
-    this.liveInput.tick(CTL, Math.round((this.sampleRate * 60) / this.song.bpm));
-    this.perform.bpm = this.song.bpm;
+    this.units = this.blockUnits();
+    const quarter = this.quarter();
+    const bpm = this.bpm;
+    this.fxs.bpm = bpm;
+    if (this.clockMode) {
+      const an = this.arpGrid.advance(this.units, quarter, this.liveInput.arpRate());
+      this.liveInput.tick(an, quarter, this.playing ? an : CTL);
+    } else this.liveInput.tick(CTL, quarter, CTL);
+    this.trackInputs.forEach((inp, i) => {
+      if (!inp.active) return;
+      if (this.clockMode) { const an = this.trackArpGrids[i].advance(this.units, quarter, inp.arpRate()); inp.tick(an, quarter, this.playing ? an : CTL); }
+      else inp.tick(CTL, quarter, CTL);
+    });
+    for (const t of this.tracks) t.synth.setBpm?.(bpm);
+    this.live.setBpm?.(bpm);
+    this.perform.bpm = bpm;
     this.perform.playing = this.playing;
     const perf = this.perform.begin(CTL);
     this.tracks.forEach((t, i) => { const s = this.song.tracks[i]; if (s) t.synth.setMix?.(s); });
@@ -355,6 +549,7 @@ export class Engine {
       this.fifoL[i] = ol / 32768;
       this.fifoR[i] = or / 32768;
     }
+    this.nowMs += (CTL * 1000) / this.sampleRate;
     this.fifoPos = 0;
   }
 

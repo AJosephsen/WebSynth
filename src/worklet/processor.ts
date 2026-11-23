@@ -30,6 +30,12 @@ type Msg =
   | { type: "perfKill" }
   | { type: "liveInput"; settings: InputSettings }
   | { type: "userSample"; slot: number; zones: Zone[] | null; data?: Uint8Array }
+  | { type: "clockMode"; mode: number }
+  | { type: "clock"; status: number }
+  | { type: "midiIn"; status: number; d1: number; d2: number }
+  | { type: "midiRoute"; route: number }
+  | { type: "learn"; track: number; param: number }
+  | { type: "learnMap"; map: { cc: number; track: number; param: number }[] }
   | { type: "play" }
   | { type: "stop" };
 
@@ -38,6 +44,8 @@ class SynthProcessor extends AudioWorkletProcessor {
 
   constructor() {
     super();
+    this.engine.onTempo = (bpm) => this.port.postMessage({ type: "tempo", bpm });
+    this.engine.onLearned = (cc, track, param) => this.port.postMessage({ type: "learned", cc, track, param });
     this.engine.onStep = (pattern, step, arrPos) => this.port.postMessage({ type: "pos", pattern, step, arrPos });
     this.engine.onTrackStep = (track, pattern, step, arrPos) => this.port.postMessage({ type: "tpos", track, pattern, step, arrPos });
     this.port.onmessage = (e: MessageEvent<Msg>) => {
@@ -64,6 +72,12 @@ class SynthProcessor extends AudioWorkletProcessor {
         case "perfLatch": en.perform.latchOn = m.on; break;
         case "perfKill": en.perform.allOff(); break;
         case "userSample": loadUserSlot(m.slot, m.zones && m.data ? { zones: m.zones, data: m.data } : null); break;
+        case "clockMode": en.setClockMode(m.mode); break;
+        case "clock": if (m.status === 0xf8) en.clockPulse(); else en.clockTransport(m.status); break;
+        case "midiIn": en.midiIn(m.status, m.d1, m.d2); break;
+        case "midiRoute": en.midiRoute = m.route; break;
+        case "learn": en.learn(m.track, m.param); break;
+        case "learnMap": en.learnMap = m.map; break;
         case "play": en.play(); break;
         case "stop": en.stop(); this.port.postMessage({ type: "stopped" }); break;
       }

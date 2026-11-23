@@ -17,6 +17,8 @@ type EngineInstrument = Extract<Instrument, { kind: "engine" }>;
 
 export class EnginePoly implements Synth {
   gain = 1;
+  /** The registry id of the engine (ANALOG, VOICE, ..). */
+  engineName = "";
   private track = new Track();
   private voices: EngVoice[];
   private fenv = 0;
@@ -24,6 +26,10 @@ export class EnginePoly implements Synth {
   private buf = new Int32Array(CTL);
   private sbuf = new Int32Array(CTL); // SPREAD: the left voices
   spreadActive = false;
+  private bendQ8 = 0;
+  private bendTarget = 0;
+  /** Pitch bend target in 1/256 semitone (MIDI pitch wheel); the voice follows in ~6 ms. */
+  setBend(q8: number): void { this.bendTarget = q8; }
   /** An engine effect still rings (ADPCM's echo): the part keeps rendering. */
   private tail = false;
   /** Values the sequencer's locks and automation hold over the instrument's own. */
@@ -33,6 +39,9 @@ export class EnginePoly implements Synth {
     write: (id, v) => { this.held.set(id, v); this.track.p[id] = v; },
     release: (id, v) => { this.held.delete(id); this.track.p[id] = v; },
   };
+  private readonly learned = new Set<number>();
+  /** A MIDI-learned controller sets a parameter (until the next sound is loaded). */
+  learnParam(id: number, v: number): void { this.held.set(id, v); this.learned.add(id); this.track.p[id] = v; }
   private reapply(): void { for (const [id, v] of this.held) this.track.p[id] = v; }
   get voiceMode(): number { return this.track.p[P_VOICE]; }
   get spreadAmount(): number { return this.track.p[P_SPRD]; }
@@ -55,6 +64,9 @@ export class EnginePoly implements Synth {
 
   setInstrument(inst: EngineInstrument): void {
     const p = this.track.p;
+    this.engineName = inst.engine;
+    for (const id of this.learned) this.held.delete(id);
+    this.learned.clear();
     inst.params.forEach((v, k) => (p[P_E0 + k] = v));
     p[P_ATK] = inst.env[0];
     p[P_DEC] = inst.env[1];
@@ -139,6 +151,13 @@ export class EnginePoly implements Synth {
     const p = t.p;
     const mod = this.mod;
     this.buf.fill(0);
+    { // the wheel's smoothing: an exact landing, no permanent small offset
+      const d = this.bendTarget - this.bendQ8;
+      this.bendQ8 += d > 0 ? (d < 4 ? d : Math.trunc((d + 3) / 4)) : d > -4 ? d : Math.trunc((d - 3) / 4);
+    }
+    const bend = this.bendQ8;
+    const bend16 = bend >= 0 ? Math.trunc(bend / 16) : -Math.trunc((-bend + 15) / 16);
+    const bendFine = Math.trunc(((bend - bend16 * 16) * 2367) / 2560);
     this.spreadActive = p[P_SPRD] > 0 && (p[P_VOICE] === 0 || p[P_VOICE] === 3);
     if (this.spreadActive) this.sbuf.fill(0);
     const on = mod.begin();
@@ -172,15 +191,16 @@ export class EnginePoly implements Synth {
         v.pitchCur += d > 0 ? (d < st ? d : st) : -d < st ? d : -st;
       }
       const envq = e.ownenv ? 0 : env;
-      const pitch16 = clamp(v.pitchCur + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((envq * p[P_ED_PIT] * 3) >> 15), 0, 2047);
+      const fine = v.fine + bendFine;
+      const pitch16 = clamp(v.pitchCur + bend16 + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((envq * p[P_ED_PIT] * 3) >> 15), 0, 2047);
       let inc = pitchInc(pitch16);
-      if (v.fine) inc = (inc + Math.imul(inc >>> 12, v.fine)) >>> 0;
+      if (fine) inc = (inc + Math.imul(inc >>> 12, fine)) >>> 0;
       let cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((envq * p[P_ED_FLT]) >> 7);
       if (v.vel > 110) cutoff += (envq * 24) >> 7;
       const shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((envq * p[P_ED_SHP]) >> 7);
-      const m: Vmod = { pitch16, inc, fine: v.fine, amp0, amp1, envq15: envq, cutoff, shape };
+      const m: Vmod = { pitch16, inc, fine, amp0, amp1, envq15: envq, cutoff, shape };
       if (on) {
-        mod.voice(v, m, v.fine);
+        mod.voice(v, m, fine);
         this.last[k] = v.envOut;
       }
       e.render(t, v, this.spreadActive && v.side === 0 ? this.sbuf : this.buf, CTL, m);

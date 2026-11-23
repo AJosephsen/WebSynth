@@ -1,6 +1,7 @@
 import { defaultInsert, InsertSetup } from "../fx/insert";
 import { ModSetup, sanitizeMod } from "../mod/setup";
 import type { SlicerSetting } from "../fx/slicer";
+import type { InputSettings } from "../synth/noteinput";
 /**
  * One step: notes (a chord), velocity 1..127, a gate length in steps (a long one holds the notes over later steps) and
  * Felucca's step features: accent, slide into the next note, ratchet (1..4 hits), nudge (-8..7 sixteenths of the step, heard
@@ -41,6 +42,8 @@ export interface TrackSetup extends MixSetup {
   patch: string; // instrument id (see instruments.ts); kept by name so a song survives a library change
   mute: boolean;
   /** The track's step timing: DIV (a note value, ARP_RATES order), SWING 0..100, GATE 0..127, QUANTIZE (1 on). */
+  /** The track's note input: chord keys and the arpeggiator (for MIDI channels playing the track). */
+  input?: InputSettings;
   /** The SLICER insert: a tempo-synced 16-step gate / stutter. */
   slicer?: SlicerSetting;
   seq?: { div?: number; swing?: number; gate?: number; quantize?: number };
@@ -153,6 +156,7 @@ export function sanitizeSong(raw: unknown): Song | null {
       ib: Math.round(clamp(t?.ib, 0, 127, d.ib)),
       ic: Math.round(clamp(t?.ic, 0, 127, d.ic)),
       mod: sanitizeMod(t?.mod),
+      ...(t?.input && typeof t.input === "object" ? { input: t.input } : {}),
       ...(t?.slicer && t.slicer.mode ? { slicer: { mode: Math.round(clamp(t.slicer.mode, 0, 2, 0)), pat: Math.round(clamp(t.slicer.pat, 1, 16, 1)), rate: Math.round(clamp(t.slicer.rate, 0, 5, 1)), depth: Math.round(clamp(t.slicer.depth, 0, 127, 100)) } } : {}),
       ...(t?.seq ? { seq: { div: Math.round(clamp(t.seq.div, 0, 9, 2)), swing: Math.round(clamp(t.seq.swing, 0, 100, 0)), gate: Math.round(clamp(t.seq.gate, 0, 127, 115)), quantize: t.seq.quantize === 0 ? 0 : 1 } } : {}),
     };

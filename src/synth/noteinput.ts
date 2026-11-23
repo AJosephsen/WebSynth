@@ -1,6 +1,7 @@
 // The note input of a part: chord keys (one key plays a chord) and the arpeggiator in front of a synth (seq.c input_on /
 // input_off). A key's chord is remembered, so its release ends exactly the notes it started. See NOTICE.
 import { Arp, ArpParams, defaultArp } from "./arp";
+import { ClockGrid, clockPeriod, clockScale } from "../seq/midiclock";
 import { chordMake } from "./chord";
 import type { Synth } from "./synth";
 
@@ -51,8 +52,24 @@ export class NoteInput {
     this.synth().allOff();
   }
 
-  /** Advances the arpeggiator by n samples at a tempo whose quarter note is `quarter` samples. */
-  tick(n: number, quarter: number): void {
-    if (this.arp.p.mode || this.arp.note) this.arp.step(n, quarter);
+  /** Advances the arpeggiator by n samples at a tempo whose quarter note is `quarter` samples (gateN: real time for its gate). */
+  tick(n: number, quarter: number, gateN = n): void {
+    if (this.arp.p.mode || this.arp.note) this.arp.step(n, quarter, gateN);
+  }
+
+  /** The arpeggiator or an arp note is running (the input needs ticking). */
+  get active(): boolean { return !!(this.arp.p.mode || this.arp.note); }
+
+  /** The arp's rate (a note value): the external clock's grid converts its units at this division. */
+  arpRate(): number { return this.arp.p.rate; }
+
+  /** The tempo changed under an external clock. */
+  rescale(oldBeat: number, newBeat: number, grid: ClockGrid): void {
+    this.arp.rescale(oldBeat, newBeat, (v, np, op) => grid.scalePhase(v, np, op), clockScale, clockPeriod);
+  }
+
+  /** A fresh start: the arp's first note fires with the first pulse. */
+  firstPulse(quarter: number): void {
+    if (this.arp.pos === 0xfffffff) this.arp.step(0, quarter, 0);
   }
 }
