@@ -54,6 +54,8 @@ export interface EngineDef {
   keep: number;
   /** Voices the engine can sound at once (PHYS keeps a state slot for 3). */
   poly?: number;
+  /** Plays recorded material: the voice still renders at a silent sustain. */
+  sampled?: boolean;
   noteOn(t: Track, v: EngVoice): void;
   render(t: Track, v: EngVoice, out: Int32Array, n: number, m: Vmod): void;
   /** Optional: the voice amplitude instead of the ADSR curve, once per control tick. */

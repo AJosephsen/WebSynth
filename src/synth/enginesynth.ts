@@ -1,16 +1,9 @@
 // A polyphonic synth around one of the ported Felucca engines: voice allocation, ADSR, velocity and the ENV->FLT
 // amount, after Felucca's voice.c (GPL-3.0-only). See NOTICE.
 import { clamp, mulq15, mulq16, pitchInc } from "../engines/dsp";
-import { CTL, EngineDef, EngVoice, FS, P_ATK, P_E0, P_FTYPE, P_REL, Track, Vmod } from "../engines/types";
+import { CTL, EngineDef, EngVoice, P_ATK, P_E0, P_FTYPE, P_REL, Track, Vmod } from "../engines/types";
+import { ENV_EXP, ENV_LIN } from "../engines/felucca-tables";
 import type { Instrument, Synth } from "./synth";
-
-// ENV_LIN / ENV_EXP (Felucca's tools/gen_tables.py): a time of 1 ms .. 10 s for a parameter 0..127
-const ms = (v: number): number => 1.0 * 10000 ** (v / 127);
-const ENV_LIN = Array.from({ length: 128 }, (_, v) => Math.max(1, Math.floor(((1 << 24) * CTL) / ((ms(v) * FS) / 1000))));
-const ENV_EXP = Array.from({ length: 128 }, (_, v) => {
-  const tau = ms(v) / 1000 / 4.6;
-  return Math.max(1, Math.min(65535, Math.floor(65536 * (1 - Math.exp(-CTL / (tau * FS))))));
-});
 
 type EngineInstrument = Extract<Instrument, { kind: "engine" }>;
 
@@ -123,7 +116,7 @@ export class EnginePoly implements Synth {
       const amp1 = mulq15(env, v.vel * 258);
       const amp0 = this.last[k];
       this.last[k] = amp1;
-      if (!env && !amp0 && v.stage === 2) continue;
+      if (!env && !amp0 && v.stage === 2 && !e.sampled) continue;
       const pitch16 = clamp(v.pitchCur, 0, 2047);
       const inc = pitchInc(pitch16);
       let cutoff = (env * this.fenv) >> 7;

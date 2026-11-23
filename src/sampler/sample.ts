@@ -116,6 +116,7 @@ export const ENG_SAMPLE: EngineDef = {
   ],
   knob: [P_E0, P_E4, P_ATK, P_REL],
   keep: 0,
+  sampled: true,
   noteOn,
   render,
 };

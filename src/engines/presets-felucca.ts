@@ -29,3 +29,7 @@ export const SAMPLE_PRESETS: Preset[] = [
   { name: "FLUTE", e: [2, 0, 0, 1, 127, 0, 0, 0], env: [12, 80, 120, 60], fenv: 0, mono: 0, fx: [0, 0, 0, 0], pat: 0 },
   { name: "SAX", e: [3, 0, 0, 1, 127, 0, 0, 0], env: [12, 80, 120, 60], fenv: 0, mono: 0, fx: [0, 0, 0, 0], pat: 0 },
 ];
+export const SLICE_PRESETS: Preset[] = [
+  { name: "CHOP", e: [0, 2, 0, 0, 0, 0, 127, 127], env: [0, 127, 127, 30], fenv: 0, mono: 0, fx: [0, 0, 0, 12], pat: 9 },
+  { name: "STUTTER", e: [0, 1, 0, 0, 1, 0, 90, 110], env: [0, 127, 127, 12], fenv: 0, mono: 0, fx: [10, 0, 20, 10], pat: 10 },
+];

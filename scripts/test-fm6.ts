@@ -160,6 +160,6 @@ for (const e of factoryEntries) {
   for (const x of out) { if (!Number.isFinite(x)) bad++; pk = Math.max(pk, Math.abs(x)); }
   if (bad || pk < 0.003 || pk > 4) { bad3++; console.log(`FAIL instrument ${e.id}: peak ${pk.toFixed(3)} nonfinite ${bad}`); }
 }
-check(factoryEntries.length === 33 + 37 + 9 + 13, `factory entries (got ${factoryEntries.length})`);
+check(factoryEntries.length === 33 + 37 + 9 + 13 + 9, `factory entries (got ${factoryEntries.length})`);
 console.log(bad3 ? `FAIL ${bad3}` : "OK formats, polyphony, sequencer");
 process.exit(bad2 + bad3 ? 1 : 0);

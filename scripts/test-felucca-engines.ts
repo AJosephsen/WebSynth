@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { renderPhrase } from "../src/engines/minihost";
 import { EngineDef } from "../src/engines/types";
 import { Preset } from "../src/engines/presets";
-import { FORMANT_PRESETS, GRAIN_PRESETS, PHYS_PRESETS, SAMPLE_PRESETS } from "../src/engines/presets-felucca";
+import { FORMANT_PRESETS, GRAIN_PRESETS, PHYS_PRESETS, SAMPLE_PRESETS, SLICE_PRESETS } from "../src/engines/presets-felucca";
 import { ENG_SAMPLE } from "../src/sampler/sample";
 import { ENG_GRAIN } from "../src/sampler/grain";
+import { ENG_SLICE } from "../src/sampler/slice";
 import { ENG_PHYS } from "../src/engines/phys";
 import { ENG_FORMANT } from "../src/engines/formant";
 
@@ -14,6 +15,7 @@ const ENGS: { id: string; e: EngineDef; presets: Preset[]; gold: string }[] = [
   { id: "phys", e: ENG_PHYS, presets: PHYS_PRESETS, gold: "tests/phys-gold.txt" },
   { id: "sample", e: ENG_SAMPLE, presets: SAMPLE_PRESETS, gold: "tests/sample-gold.txt" },
   { id: "grain", e: ENG_GRAIN, presets: GRAIN_PRESETS, gold: "tests/grain-gold.txt" },
+  { id: "slice", e: ENG_SLICE, presets: SLICE_PRESETS, gold: "tests/slice-gold.txt" },
 ];
 const hex = (h: bigint) => h.toString(16).padStart(16, "0");
 let total = 0, bad = 0;

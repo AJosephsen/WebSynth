@@ -6,7 +6,10 @@ import { ENG_PHASE } from "./phase";
 import { ENG_TRIO } from "./trio";
 import { ENG_FORMANT } from "./formant";
 import { ENG_PHYS } from "./phys";
-import { FORMANT_PRESETS, PHYS_PRESETS } from "./presets-felucca";
+import { FORMANT_PRESETS, GRAIN_PRESETS, PHYS_PRESETS, SAMPLE_PRESETS, SLICE_PRESETS } from "./presets-felucca";
+import { ENG_SAMPLE } from "../sampler/sample";
+import { ENG_GRAIN } from "../sampler/grain";
+import { ENG_SLICE } from "../sampler/slice";
 import { ENG_WHEEL } from "./wheel";
 import { ANALOG_PRESETS, LOFI_PRESETS, NOISE_PRESETS, PHASE_PRESETS, Preset, TRIO_PRESETS, WHEEL_PRESETS } from "./presets";
 import { EngineDef } from "./types";
@@ -22,6 +25,10 @@ export const ENGINES: EngineEntry[] = [
   { id: "PHASE", def: ENG_PHASE, presets: PHASE_PRESETS },
   { id: "VOICE", def: ENG_FORMANT, presets: FORMANT_PRESETS },
   { id: "PHYS", def: ENG_PHYS, presets: PHYS_PRESETS },
+  // SAMPLE's second PIANO is an alias of the first (a retired set): listed once
+  { id: "SAMPLE", def: ENG_SAMPLE, presets: SAMPLE_PRESETS.filter((p, i) => i !== 1) },
+  { id: "GRAIN", def: ENG_GRAIN, presets: GRAIN_PRESETS },
+  { id: "SLICE", def: ENG_SLICE, presets: SLICE_PRESETS },
 ];
 
 export const engineById = (id: string): EngineEntry | undefined => ENGINES.find((e) => e.id === id);
