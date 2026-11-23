@@ -1,7 +1,7 @@
 // Demo songs in four styles: arrangements of 32-step patterns over a four-chord loop, written in a compact notation.
 //   a token is "." (rest), or notes joined by "+" ("c4", "a3+c4+e4", drum letters k s h o c t r b), then ":gate" (steps)
 //   and "/velocity": "a3+c4+e4:2.5/90". A bar is 16 tokens.
-import { MD_CUT, MD_SHP, MS_LFO } from "../mod/mod";
+import { MD_CUT, MD_PAN, MD_SHP, MS_LFO, MS_SH, MS_SLEW } from "../mod/mod";
 import { defaultMod, ModSetup } from "../mod/setup";
 import { defaultMix, defaultSongFx, emptyPattern, MAX_STEPS, MixSetup, Pattern, Song, SongFx, Step, TRACKS } from "./song";
 
@@ -59,46 +59,51 @@ function comp(rhythm: string, notes: number[]): string {
   }).join(" ");
 }
 
+const slots = (...s: { src: number; dst: number; amt: number }[]) => [...s, ...Array.from({ length: 4 - s.length }, () => ({ src: 0, dst: 0, amt: 0 }))];
+
 // ---------------------------------------------------------------------------------------------------------------------
-// 1. Sunrise sequence: 70s synthesizer pop in the spirit of Jean-Michel Jarre (A minor, bubbling arpeggio, strings, lead)
+// 1. Sunrise Sequence: 70s synthesizer pop in the spirit of Jean-Michel Jarre. A minor, a bubbling arpeggio and a lead
+//    thrown into a long dotted echo, phased strings, a pulsing bass; a bridge in D minor
 // ---------------------------------------------------------------------------------------------------------------------
 function sunrise(): Song {
-  const arpIdx = [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 3, 2, 1, 2];
-  const arp = (c: string): string => {
+  const idxA = [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 3, 2, 1, 2];
+  const idxB = [0, 2, 4, 3, 1, 2, 4, 3, 0, 2, 3, 4, 2, 1, 3, 4];
+  const arp = (c: string, idx: number[]): string => {
     const n = chord(c);
-    const pool = [n[0], n[1], n[2], n[0] + 12];
-    return arpIdx.map((k, s) => `${name(pool[k])}:0.8/${s % 4 === 0 ? 112 : 78}`).join(" ");
+    const pool = [n[0], n[1], n[2], n[0] + 12, n[1] + 12];
+    return idx.map((k, st) => `${name(pool[k])}:0.7/${st % 4 === 0 ? 114 : st % 2 === 0 ? 86 : 66}`).join(" ");
   };
   const pulse = (root: string): string => Array.from({ length: 8 }, (_, k) => `${root}:1.5/${k === 0 ? 110 : k === 4 ? 100 : 88} .`).join(" ");
   const padc = (c: string): string => `${join(chord(c), ":15.5/80")} ${". ".repeat(15).trim()}`;
-  const theme: Record<string, string> = {
-    am: "e5:3 . . d5 c5:3 . . a4 e5:4 . . . . . . .",
-    f: "c5:3 . . a4 f5:3 . . e5 c5:4 . . . . . . .",
-    c: "e5:3 . . g5 e5:3 . . d5 c5:4 . . . d5:2 . e5:2 .",
-    g: "d5:3 . . b4 g4:3 . . b4 d5:6 . . . . . . .",
+  const harm: Record<string, { arp: string; pad: string; bass: string; lead: string; lead2: string }> = {
+    am: { arp: "a4 c5 e5", pad: "a3 c4 e4", bass: "a2", lead: "e5:3 . . d5 c5:3 . . a4 e5:4 . . . . . . .", lead2: "a5:3 . . g5 e5:3 . . g5 a5:4 . . . . . . ." },
+    f: { arp: "f4 a4 c5", pad: "a3 c4 f4", bass: "f2", lead: "c5:3 . . a4 f5:3 . . e5 c5:4 . . . . . . .", lead2: "c6:3 . . a5 f5:3 . . a5 c6:4 . . . . . . ." },
+    c: { arp: "e4 g4 c5", pad: "g3 c4 e4", bass: "c3", lead: "e5:3 . . g5 e5:3 . . d5 c5:4 . . . d5:2 . e5:2 .", lead2: "g5:3 . . e5 c6:3 . . b5 g5:4 . . . a5:2 . g5:2 ." },
+    g: { arp: "d4 g4 b4", pad: "g3 b3 d4", bass: "g2", lead: "d5:3 . . b4 g4:3 . . b4 d5:6 . . . . . . .", lead2: "b5:3 . . a5 g5:3 . . d5 g5:4 . . . . . . ." },
+    dm: { arp: "d4 f4 a4", pad: "a3 d4 f4", bass: "d2", lead: "a5:3 . . g5 f5:3 . . e5 d5:4 . . . . . . .", lead2: "a5:3 . . g5 f5:3 . . e5 d5:4 . . . . . . ." },
+    e: { arp: "e4 g#4 b4", pad: "g#3 b3 e4", bass: "e2", lead: "g#5:3 . . b5 e6:3 . . d6 b5:6 . . . . . . .", lead2: "g#5:3 . . b5 e6:3 . . d6 b5:6 . . . . . . ." },
   };
-  const arps = { am: arp("a4 c5 e5"), f: arp("f4 a4 c5"), c: arp("e4 g4 c5"), g: arp("d4 g4 b4") };
-  const pads = { am: padc("a3 c4 e4"), f: padc("f3 a3 c4"), c: padc("g3 c4 e4"), g: padc("g3 b3 d4") };
-  const bass = { am: pulse("a2"), f: pulse("f2"), c: pulse("c3"), g: pulse("g2") };
-  const make = (label: string, use: boolean[]): Pattern[] =>
-    [["am", "f"], ["c", "g"]].map(([x, y], i) =>
+  const make = (label: string, pair: string[][], use: boolean[], idx: number[], second = false): Pattern[] =>
+    pair.map(([x, y], i) =>
       pattern(`${label} ${i + 1}`, [
-        use[0] ? [arps[x as "am"], arps[y as "am"]] : [],
-        use[1] ? [pads[x as "am"], pads[y as "am"]] : [],
-        use[2] ? [theme[x], theme[y]] : [],
-        use[3] ? [bass[x as "am"], bass[y as "am"]] : [],
+        use[0] ? [arp(harm[x].arp, idx), arp(harm[y].arp, idx)] : [],
+        use[1] ? [padc(harm[x].pad), padc(harm[y].pad)] : [],
+        use[2] ? [second ? harm[x].lead2 : harm[x].lead, second ? harm[y].lead2 : harm[y].lead] : [],
+        use[3] ? [pulse(harm[x].bass), pulse(harm[y].bass)] : [],
       ]));
-  const [i1, i2] = make("Intro", [true, false, false, true]);
-  const [v1, v2] = make("Verse", [true, true, false, true]);
-  const [t1, t2] = make("Theme", [true, true, true, true]);
-  const [o1, o2] = make("Outro", [true, true, false, false]);
-  return song(118, 0, [
-    { patch: "ANALOG/PLUCK", mix: { level: 100, pan: -25, delay: 50, reverb: 20 }, mod: { rate: 45, slots: [{ src: MS_LFO, dst: MD_CUT, amt: 35 }, { src: 0, dst: 0, amt: 0 }, { src: 0, dst: 0, amt: 0 }, { src: 0, dst: 0, amt: 0 }] } },
-    { patch: "ANALOG/PWM STR", mix: { level: 92, pan: 25, chorus: 55, reverb: 45 }, mod: { rate: 30, slots: [{ src: MS_LFO, dst: MD_SHP, amt: 40 }, { src: 0, dst: 0, amt: 0 }, { src: 0, dst: 0, amt: 0 }, { src: 0, dst: 0, amt: 0 }] } },
-    { patch: "ANALOG/SAW LEAD", mix: { level: 98, delay: 55, reverb: 38 }, mod: { rate: 85, ldPit: 12, fade: 70 } },
+  const main = [["am", "f"], ["c", "g"]], bridge = [["dm", "f"], ["g", "e"]];
+  const [i1, i2] = make("Intro", main, [true, false, false, true], idxA);
+  const [v1, v2] = make("Verse", main, [true, true, false, true], idxA);
+  const [t1, t2] = make("Theme", main, [true, true, true, true], idxB);
+  const [b1, b2] = make("Bridge", bridge, [true, true, true, true], idxB, true);
+  const [o1, o2] = make("Outro", main, [true, true, false, false], idxA);
+  return song(116, 0, [
+    { patch: "ANALOG/PLUCK", mix: { level: 106, pan: -30, delay: 92, reverb: 18 }, mod: { rate: 40, slots: slots({ src: MS_LFO, dst: MD_CUT, amt: 38 }) } },
+    { patch: "ANALOG/PWM STR", mix: { level: 100, pan: 25, chorus: 60, reverb: 50, itype: 6, imix: 70, ia: 35, ib: 70, ic: 60 }, mod: { rate: 30, slots: slots({ src: MS_LFO, dst: MD_SHP, amt: 42 }) } },
+    { patch: "ANALOG/SAW LEAD", mix: { level: 110, delay: 88, reverb: 40 }, mod: { rate: 86, ldPit: 12, fade: 75, slots: slots({ src: MS_SLEW, dst: MD_CUT, amt: 25 }) } },
     { patch: "ANALOG/SUB BASS", mix: { level: 108 } },
-  ], { dtime: 10, dfdbk: 55, dcolor: 70, dmix: 85, rtype: 2, rsize: 100, rdamp: 50, crate: 30, cdepth: 70 },
-  [i1, i2, v1, v2, t1, t2, o1, o2], [0, 1, 2, 3, 4, 5, 2, 3, 4, 5, 6, 7]);
+  ], { dtime: 10, dfdbk: 78, dcolor: 55, dmix: 105, rtype: 2, rsize: 105, rdamp: 50, crate: 28, cdepth: 70 },
+  [i1, i2, v1, v2, t1, t2, b1, b2, o1, o2], [0, 1, 2, 3, 2, 3, 4, 5, 6, 7, 4, 5, 8, 9]);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -133,8 +138,8 @@ function neon(): Song {
   return song(120, 0, [
     { patch: "DRUM/80 KIT", mix: { level: 112, reverb: 35 } },
     { patch: "SYN BASS", mix: { level: 108 } },
-    { patch: "ANALOG/BRASS", mix: { level: 86, pan: -15, chorus: 35, delay: 20, reverb: 25 } },
-    { patch: "ANALOG/SAW LEAD", mix: { level: 96, pan: 15, delay: 38, reverb: 30 }, mod: { rate: 88, ldPit: 10, fade: 60 } },
+    { patch: "ANALOG/BRASS", mix: { level: 108, pan: -15, chorus: 35, delay: 20, reverb: 25 } },
+    { patch: "ANALOG/SAW LEAD", mix: { level: 110, pan: 15, delay: 38, reverb: 30 }, mod: { rate: 88, ldPit: 10, fade: 60 } },
   ], { dtime: 1, dfdbk: 45, dcolor: 75, dmix: 80, rtype: 0, rsize: 85, rdamp: 40, crate: 35, cdepth: 55 },
   [i1, i2, v1, v2, c1, c2], [0, 1, 2, 3, 4, 5, 2, 3, 4, 5]);
 }
@@ -159,7 +164,7 @@ function basement(): Song {
     { patch: "DRUM/DEEP KIT", mix: { level: 114, reverb: 12 } },
     { patch: "ANALOG/SUB BASS", mix: { level: 110 } },
     { patch: "TINE EP", mix: { level: 100, pan: -10, chorus: 40, reverb: 22, itype: 6, imix: 40, ia: 30, ib: 90, ic: 70 } },
-    { patch: "VIBES", mix: { level: 82, pan: 22, delay: 40, reverb: 32 } },
+    { patch: "VIBES", mix: { level: 104, pan: 22, delay: 40, reverb: 32 } },
   ], { dtime: 10, dfdbk: 45, dcolor: 55, dmix: 70, rtype: 1, rsize: 70, rdamp: 60, crate: 25, cdepth: 50 },
   [intro, a, b, c], [0, 1, 1, 2, 3, 1, 2, 0]);
 }
@@ -198,9 +203,91 @@ function velvet(): Song {
     { patch: "DRUM/DRUM KIT", mix: { level: 104, reverb: 14 } },
     { patch: "SLAP BASS", mix: { level: 106 } },
     { patch: "TINE EP", mix: { level: 104, pan: -8, chorus: 45, delay: 28, reverb: 24, itype: 8, imix: 35, ia: 40, ib: 80, ic: 40 } },
-    { patch: "WARM PAD", mix: { level: 66, pan: 12, chorus: 30, reverb: 60 } },
+    { patch: "WARM PAD", mix: { level: 90, pan: 12, chorus: 30, reverb: 60 } },
   ], { dtime: 10, dfdbk: 42, dcolor: 55, dmix: 70, rtype: 2, rsize: 95, rdamp: 55, crate: 25, cdepth: 55 },
   [i1, i2, g1, g2, b1, b2], [0, 1, 2, 3, 2, 3, 4, 5, 2, 3, 2, 3]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 5. Glass Cathedral: an ambient landscape. Granular clouds, a bell tree thrown into a huge echo, choir, wind, shimmer;
+//    the matrix drifts the stereo image and the filters
+// ---------------------------------------------------------------------------------------------------------------------
+function cathedral(): Song {
+  const hold = (c: string, g = 15.5, v = 78): string => `${join(chord(c), `:${g}/${v}`)} ${". ".repeat(15).trim()}`;
+  const ch = { a: "d3 a3 e4 f#4", b: "b2 f#3 a3 d4", c: "g3 d4 f#4 a4", d: "e3 b3 d4 g4" };
+  const hi = { a: "a4 d5 f#5", b: "a4 d5 f#5", c: "b4 d5 f#5", d: "b4 e5 g5" };
+  const bells: Record<string, string> = {
+    a: "a5:2/90 . . . . . . . . . e6:2/70 . . . . .",
+    b: ". . f#5:2/80 . . . . . . d6:2/75 . . . . . .",
+    c: ". . . . d6:2/85 . . . f#6:2/65 . . . . . . .",
+    d: "b5:2/80 . . . . . g6:2/70 . . . . . e6:2/60 . . .",
+  };
+  const choir: Record<string, string> = {
+    a: "f#4:10/80 . . . . . . . . . a4:5/70 . . . . .",
+    b: "d4:16/72 . . . . . . . . . . . . . . .",
+    c: "a4:8/80 . . . . . . . f#4:8/70 . . . . . . .",
+    d: "g4:12/78 . . . . . . . . . . . b4:4/70 . . .",
+  };
+  const make = (label: string, pair: string[], use: boolean[]): Pattern =>
+    pattern(label, [
+      use[0] ? [hold(ch[pair[0] as "a"]), hold(ch[pair[1] as "a"])] : [],
+      use[1] ? [bells[pair[0]], bells[pair[1]]] : [],
+      use[2] ? [choir[pair[0]], choir[pair[1]]] : [],
+      use[3] ? [`${join(chord(hi[pair[0] as "a"]), ":15.5/55")} ${". ".repeat(15).trim()}`, `${join(chord(hi[pair[1] as "a"]), ":15.5/55")} ${". ".repeat(15).trim()}`] : [],
+    ]);
+  const ab = ["a", "b"], cd = ["c", "d"];
+  const dawn1 = make("Dawn 1", ab, [true, false, false, false]), dawn2 = make("Dawn 2", cd, [true, false, false, false]);
+  const bell1 = make("Bells 1", ab, [true, true, false, false]), bell2 = make("Bells 2", cd, [true, true, false, false]);
+  const choir1 = make("Choir 1", ab, [true, true, true, false]), choir2 = make("Choir 2", cd, [true, true, true, false]);
+  const sh1 = make("Shimmer 1", ab, [true, true, true, true]), sh2 = make("Shimmer 2", cd, [true, true, true, true]);
+  const fade1 = make("Fade 1", ab, [true, true, false, true]), fade2 = make("Fade 2", cd, [false, true, false, true]);
+  return song(68, 0, [
+    { patch: "GRAIN/CLOUD PAD", mix: { level: 108, pan: -15, chorus: 40, reverb: 70 }, mod: { rate: 28, slots: slots({ src: MS_LFO, dst: MD_PAN, amt: 30 }) } },
+    { patch: "PHYS/BELL TREE", mix: { level: 114, delay: 105, reverb: 75 }, mod: { rate: 50, slots: slots({ src: MS_SH, dst: MD_PAN, amt: 55 }) } },
+    { patch: "VOICE/CHOIR AAH", mix: { level: 100, pan: 10, chorus: 25, delay: 35, reverb: 85 } },
+    { patch: "GRAIN/SHIMMER", mix: { level: 108, pan: 20, delay: 60, reverb: 90 }, mod: { rate: 22, slots: slots({ src: MS_SLEW, dst: MD_PAN, amt: 60 }) } },
+  ], { dtime: 12, dfdbk: 92, dcolor: 45, dmix: 110, rtype: 2, rsize: 127, rdamp: 35, crate: 20, cdepth: 85 },
+  [dawn1, dawn2, bell1, bell2, choir1, choir2, sh1, sh2, fade1, fade2], [0, 1, 0, 1, 2, 3, 4, 5, 6, 7, 6, 7, 4, 5, 8, 9]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 6. Dub Chamber: slow dub at 76 BPM. A one-drop beat, deep bass, an organ skank and a flute line, all sent through a
+//    dotted-quarter echo with a long feedback tail
+// ---------------------------------------------------------------------------------------------------------------------
+function dub(): Song {
+  const drops = "h . h . h . h . k+r+h . h . h . h .";
+  const dropsB = "h . h . h . h . k+r+h . h . h . s s/60";
+  const dropsC = "h . h . h . o . k+r+h . h . h . h .";
+  const bassBar = (r: string): string => `${r}:5/115 . . . . . ${r}:1/85 . . . ${r}:3/100 . . . . .`;
+  const skank = (c: string): string => comp(". . X:0.5/100 . . . X:0.5/82 . . . X:0.5/100 . . . X:0.5/80 .", chord(c));
+  const harm: Record<string, { bass: string; chord: string }> = {
+    am: { bass: "a1", chord: "a3 c4 e4" }, dm: { bass: "d2", chord: "a3 d4 f4" }, e7: { bass: "e1", chord: "g#3 b3 d4 e4" },
+  };
+  const flute: Record<string, string> = {
+    am: "e5:4 . . . c5:3 . . . . . . . . . . .",
+    dm: "d5:3 . . . f5:3 . . . a5:4 . . . . . . .",
+    e7: "g#5:3 . . . b5:6 . . . . . . . d6:2 . . .",
+  };
+  const pairs = [["am", "dm"], ["am", "e7"]];
+  const make = (label: string, use: boolean[], d: [string, string]): Pattern[] =>
+    pairs.map(([x, y], i) =>
+      pattern(`${label} ${i + 1}`, [
+        use[0] ? (i === 1 ? [d[0], d[1]] : [d[0], dropsC]) : [],
+        use[1] ? [bassBar(harm[x].bass), bassBar(harm[y].bass)] : [],
+        [skank(harm[x].chord), skank(harm[y].chord)],
+        use[2] ? [flute[x], flute[y]] : [],
+      ], [0]));
+  const [i1, i2] = make("Intro", [true, false, false], [drops, drops]);
+  const [v1, v2] = make("Verse", [true, true, false], [drops, dropsB]);
+  const [m1, m2] = make("Melody", [true, true, true], [drops, dropsB]);
+  const [d1, d2] = make("Dub", [true, false, true], [drops, dropsB]);
+  return song(76, 0.05, [
+    { patch: "DRUM/DEEP KIT", mix: { level: 108, delay: 30, reverb: 22 } },
+    { patch: "ANALOG/SUB BASS", mix: { level: 112 } },
+    { patch: "WHEEL/JAZZ PERC", mix: { level: 106, pan: -12, chorus: 20, delay: 110, reverb: 28 }, mod: { rate: 60, slots: slots({ src: MS_LFO, dst: MD_PAN, amt: 25 }) } },
+    { patch: "SAMPLE/FLUTE", mix: { level: 106, pan: 18, delay: 100, reverb: 45 } },
+  ], { dtime: 12, dfdbk: 88, dcolor: 50, dmix: 105, rtype: 1, rsize: 90, rdamp: 55, crate: 25, cdepth: 45 },
+  [i1, i2, v1, v2, m1, m2, d1, d2], [0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7]);
 }
 
 export interface DemoSong { id: string; title: string; genre: string; build: () => Song }
@@ -209,5 +296,7 @@ export const demoSongs: DemoSong[] = [
   { id: "sunrise", title: "Sunrise Sequence", genre: "70s synth pop (Jarre style) · 118 BPM", build: sunrise },
   { id: "neon", title: "Neon Heartbeat", genre: "80s pop · 120 BPM", build: neon },
   { id: "basement", title: "Basement Tape", genre: "90s hip hop · 90 BPM, swung", build: basement },
+  { id: "cathedral", title: "Glass Cathedral", genre: "Ambient landscape: clouds, bells in a huge echo, choir · 68 BPM", build: cathedral },
+  { id: "dub", title: "Dub Chamber", genre: "Slow dub: one-drop beat, organ skank in a long echo · 76 BPM", build: dub },
   { id: "velvet", title: "Velvet Rhodes", genre: "Slow groove, Rhodes riff with drums and bass · 78 BPM", build: velvet },
 ];
