@@ -2,11 +2,13 @@
 import { readFileSync } from "node:fs";
 import { renderPhrase } from "../src/engines/minihost";
 import { EngineDef } from "../src/engines/types";
-import { ANALOG_PRESETS, Preset } from "../src/engines/presets";
+import { ANALOG_PRESETS, LOFI_PRESETS, Preset } from "../src/engines/presets";
 import { ENG_ANALOG } from "../src/engines/analog";
+import { ENG_LOFI } from "../src/engines/lofi";
 
 const ENGS: { id: string; e: EngineDef; presets: Preset[] }[] = [
   { id: "analog", e: ENG_ANALOG, presets: ANALOG_PRESETS },
+  { id: "lofi", e: ENG_LOFI, presets: LOFI_PRESETS },
 ];
 const only = process.argv[2];
 const lines: string[] = [];
@@ -33,6 +35,15 @@ for (const { id, e } of ENGS) {
     pr.e[0] = v;
     const r = renderPhrase(e, pr, 0);
     lines.push(`${id}/e0=${v} ${hex(r.hash)} ${r.peak}`);
+  }
+}
+{
+  const e = ENG_LOFI;
+  const pr = { e: e.edit.map((d) => d.def), env: [0, 0, 0, 0] };
+  for (let v = e.edit[1].min; v <= e.edit[1].max; v++) {
+    pr.e[1] = v;
+    const r = renderPhrase(e, pr, 0);
+    lines.push(`lofi/wave=${v} ${hex(r.hash)} ${r.peak}`);
   }
 }
 const gold = readFileSync("tests/engines-golden.txt", "utf8").trim().split("\n");
