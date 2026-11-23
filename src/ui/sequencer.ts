@@ -5,6 +5,7 @@ import { INSERT_NAMES, insertLabels } from "../fx/insert";
 import { engineById } from "../engines/registry";
 import { defaultMod } from "../mod/setup";
 import { demoSongs } from "../seq/songs";
+import { ARP_RATES } from "../synth/arp";
 import { applyModInput, modPanelHtml } from "./modpanel";
 import {
   clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
@@ -17,6 +18,11 @@ const isBlack = (n: number) => [1, 3, 6, 8, 10].includes(n % 12);
 const VELS = [50, 80, 100, 127];
 const GATES = [0.5, 0.9, 1.8, 3.6, 7.5];
 const ROWS = 24;
+const NUDGES = [0, -4, -2, 2, 4];
+const PROBS = [0, 75, 50, 25, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112];
+const COND_TXT = ["1:2", "2:2", "1:3", "2:3", "3:3", "1:4", "2:4", "3:4", "4:4", "FILL", "!FILL"];
+const probText = (p?: number): string => (!p ? "·" : p >= 102 ? COND_TXT[p - 102] : `${p}%`);
+const cycle = <T,>(list: T[], v: T): T => list[(list.indexOf(v) + 1) % list.length];
 const MIX_KEYS: [keyof MixSetup, string, number, number][] = [
   ["level", "Level", 0, 127], ["pan", "Pan", -64, 63], ["dist", "Dist", 0, 127], ["chorus", "Chorus", 0, 127], ["delay", "Delay", 0, 127], ["reverb", "Reverb", 0, 127],
 ];
@@ -74,6 +80,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       <div class="seq-bar" id="sq-patbar"></div>
       <div class="seq-bar">
         <label>Name <input id="sq-name" maxlength="16"></label>
+        <label>Track length <select id="sq-tlen">${Array.from({ length: 32 }, (_, k) => `<option>${k + 1}</option>`).join("")}</select></label>
         <label>Length <select id="sq-len"><option>8</option><option>16</option><option>24</option><option>32</option></select></label>
         <button id="sq-add">New pattern</button>
         <button id="sq-dup">Duplicate</button>
@@ -109,6 +116,15 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     setTimeout(() => deps.send({ type: "trackNoteOff", track, note }), 220);
   }
 
+  function seqRow(t: Song["tracks"][number], i: number): string {
+    void i;
+    const q = t.seq ?? {};
+    return `<div class="mix ins"><label class="kc wideSel"><span>Step div</span><select data-seq="div">${ARP_RATES.map((n, k) => `<option value="${k}"${(q.div ?? 2) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="kc"><span>Swing</span><input type="range" data-seq="swing" min="0" max="100" value="${q.swing ?? 0}"></label>
+      <label class="kc"><span>Gate</span><input type="range" data-seq="gate" min="0" max="127" value="${q.gate ?? 115}"></label>
+      <label class="kc"><span>Quantize</span><input type="checkbox" data-seq="quantize"${(q.quantize ?? 1) ? " checked" : ""}></label></div>`;
+  }
+
   function modSection(t: Song["tracks"][number], i: number, lib: LibraryEntry[]): string {
     const inst = lib.find((p) => p.id === t.patch)?.instrument;
     const open = modOpen.has(i) ? " open" : "";
@@ -135,7 +151,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
               ? `<label class="kc"><span>Mix</span><input type="range" data-mix="imix" min="0" max="127" value="${t.imix}"></label>` +
                 (["ia", "ib", "ic"] as const).map((k, n) => `<label class="kc"><span>${insertLabels(t.itype)[n]}</span><input type="range" data-mix="${k}" min="0" max="127" value="${t[k]}"></label>`).join("")
               : ""
-          }</div>${modSection(t, i, lib)}</div>`;
+          }</div>${seqRow(t, i)}${modSection(t, i, lib)}</div>`;
       })
       .join("");
   }
@@ -155,6 +171,9 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       song.patterns.map((p, i) => `<button data-p="${i}" class="pbtn${i === pat ? " sel" : ""}">${i + 1}. ${p.name}</button>`).join("");
     ($<HTMLInputElement>("sq-name")).value = cur().name;
     ($<HTMLSelectElement>("sq-len")).value = String(cur().length);
+    const tl = $<HTMLSelectElement>("sq-tlen");
+    tl.innerHTML = Array.from({ length: cur().length }, (_, k) => `<option>${k + 1}</option>`).join("");
+    tl.value = String(Math.min(cur().length, cur().lens?.[track] ?? cur().length));
     ($<HTMLInputElement>("sq-bpm")).value = String(song.bpm);
     $("sq-bpmo").textContent = String(Math.round(song.bpm));
     ($<HTMLInputElement>("sq-swing")).value = String(Math.round(song.swing * 100));
@@ -186,6 +205,19 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     }
     html += `<div class="lab small">gate</div>`;
     for (let s = 0; s < len; s++) html += `<div class="g" data-gs="${s}">${steps[s] ? (steps[s]!.gate ?? 0.9) : ""}</div>`;
+    const fxRow = (key: string, label: string, show: (st: NonNullable<Step>) => string, onClass: (st: NonNullable<Step>) => boolean, always = false): void => {
+      html += `<div class="lab small">${label}</div>`;
+      for (let s = 0; s < len; s++) {
+        const st = steps[s];
+        html += `<div class="g f${st && onClass(st) ? " fon" : ""}" data-fs="${key}" data-s2="${s}">${st ? show(st) : always ? "·" : ""}</div>`;
+      }
+    };
+    fxRow("acc", "acc", (st) => (st.accent ? "A" : "·"), (st) => !!st.accent);
+    fxRow("sld", "slide", (st) => (st.slide ? "S" : "·"), (st) => !!st.slide);
+    fxRow("tie", "tie", (st) => (st.tie ? "T" : "·"), (st) => !!st.tie, true);
+    fxRow("rat", "ratch", (st) => (st.ratchet && st.ratchet > 1 ? `×${st.ratchet}` : "·"), (st) => !!(st.ratchet && st.ratchet > 1));
+    fxRow("nud", "nudge", (st) => (st.nudge ? String(st.nudge) : "·"), (st) => !!st.nudge);
+    fxRow("prb", "chance", (st) => probText(st.prob), (st) => !!st.prob);
     root.querySelector("#sq-roll")!.innerHTML = html + "</div>";
     markPlayhead();
   }
@@ -241,6 +273,27 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       if (st) { st.vel = VELS[(VELS.findIndex((x) => x >= (st.vel ?? 100)) + 1) % VELS.length]; commit(); renderRoll(); }
       return;
     }
+    const f = el.closest<HTMLElement>("[data-fs]");
+    if (f) {
+      const idx = Number(f.dataset.s2), steps = cur().steps[track], st = steps[idx], key = f.dataset.fs;
+      if (key === "tie") {
+        if (st?.tie) steps[idx] = null;
+        else if (!st) {
+          const prev = steps.slice(0, idx).reverse().find((x) => x);
+          if (prev) steps[idx] = { notes: [...prev.notes], tie: true };
+        }
+      } else if (st) {
+        if (key === "acc") st.accent = !st.accent || undefined;
+        else if (key === "sld") st.slide = !st.slide || undefined;
+        else if (key === "rat") st.ratchet = cycle([1, 2, 3, 4], st.ratchet ?? 1) || undefined;
+        else if (key === "nud") st.nudge = cycle(NUDGES, st.nudge ?? 0) || undefined;
+        else if (key === "prb") st.prob = cycle(PROBS, st.prob ?? 0) || undefined;
+        if (st.ratchet === 1) delete st.ratchet;
+      }
+      commit();
+      renderRoll();
+      return;
+    }
     const g = el.closest<HTMLElement>("[data-gs]");
     if (g) {
       const st = cur().steps[track][Number(g.dataset.gs)];
@@ -250,7 +303,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const trk = el.closest<HTMLElement>(".trk");
     if (trk && el.dataset.act) {
       const i = Number(trk.dataset.t);
-      if (el.dataset.act === "sel") { track = i; renderTracks(); renderRoll(); }
+      if (el.dataset.act === "sel") { track = i; renderTracks(); renderPatterns(); renderRoll(); }
       if (el.dataset.act === "mute") { song.tracks[i].mute = !song.tracks[i].mute; commit(); renderTracks(); }
       return;
     }
@@ -285,6 +338,13 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         if (out && el.type === "range" && el.dataset.mod) out.textContent = el.value;
         commit();
       }
+      return;
+    }
+    if (trk && el.dataset.seq) {
+      const i = Number(trk.dataset.t);
+      const q = (song.tracks[i].seq ??= {}) as Record<string, number>;
+      q[el.dataset.seq] = el.type === "checkbox" ? (el.checked ? 1 : 0) : Number(el.value);
+      commit();
       return;
     }
     if (trk && el.dataset.mix) {
@@ -332,7 +392,20 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   ($<HTMLInputElement>("sq-bpm")).oninput = (e) => { song.bpm = Math.min(240, Math.max(40, Number((e.target as HTMLInputElement).value) || 104)); $("sq-bpmo").textContent = String(song.bpm); commit(); };
   ($<HTMLInputElement>("sq-swing")).oninput = (e) => { song.swing = Number((e.target as HTMLInputElement).value) / 100; $("sq-swingo").textContent = `${Math.round(song.swing * 100)}%`; commit(); };
   ($<HTMLInputElement>("sq-name")).onchange = (e) => { cur().name = (e.target as HTMLInputElement).value || "Pattern"; commit(); renderPatterns(); renderArr(); };
-  ($<HTMLSelectElement>("sq-len")).onchange = (e) => { cur().length = Number((e.target as HTMLSelectElement).value); commit(); renderRoll(); };
+  ($<HTMLSelectElement>("sq-tlen")).onchange = (e) => {
+    const v = Number((e.target as HTMLSelectElement).value);
+    const p = cur();
+    p.lens ??= Array.from({ length: TRACKS }, () => p.length);
+    p.lens[track] = v;
+    if (p.lens.every((x) => x === p.length)) delete p.lens;
+    commit(); renderRoll();
+  };
+  ($<HTMLSelectElement>("sq-len")).onchange = (e) => {
+    const p = cur();
+    p.length = Number((e.target as HTMLSelectElement).value);
+    if (p.lens) { p.lens = p.lens.map((x) => Math.min(x, p.length)); if (p.lens.every((x) => x === p.length)) delete p.lens; }
+    commit(); renderPatterns(); renderRoll();
+  };
   $("sq-add").onclick = () => {
     if (song.patterns.length >= MAX_PATTERNS) return;
     song.patterns.push(emptyPattern(`New ${song.patterns.length + 1}`));
@@ -413,10 +486,13 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     sync(): void { commit(true); deps.send({ type: "mode", mode, pattern: pat }); },
     /** Re-reads the patch list (after an import). */
     refreshLibrary(): void { renderTracks(); },
-    onMessage(m: { type: string; pattern?: number; step?: number; arrPos?: number }): void {
+    onMessage(m: { type: string; pattern?: number; step?: number; arrPos?: number; track?: number }): void {
       if (m.type === "pos") {
-        playPattern = m.pattern ?? 0; playStep = m.step ?? 0; playArr = m.arrPos ?? 0;
+        playPattern = m.pattern ?? 0; playArr = m.arrPos ?? 0;
+        if (m.step !== undefined && track === 0) playStep = m.step;
         markPlayhead();
+      } else if (m.type === "tpos") {
+        if (m.track === track) { playPattern = m.pattern ?? 0; playStep = m.step ?? 0; playArr = m.arrPos ?? 0; markPlayhead(); }
       } else if (m.type === "stopped") {
         playing = false; playStep = -1;
         $("sq-play").textContent = "Play";

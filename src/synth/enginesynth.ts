@@ -95,7 +95,7 @@ export class EnginePoly implements Synth {
   noteOff(note: number): void { this.layer.noteOff(note); }
 
   /** The next legato note glides (a step's slide). */
-  set slide(on: boolean) { this.layer.slideGlide = on ? 1 : 0; }
+  setSlide(on: boolean): void { this.layer.slideGlide = on ? 1 : 0; }
 
   allOff(): void { this.layer.allOff(); }
 

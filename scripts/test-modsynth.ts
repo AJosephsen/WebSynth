@@ -135,5 +135,34 @@ void m5; void lr;
   check(/^(60,64,)+/.test(ons + ","), `the arp alternates the held notes (${ons})`);
   check(events.filter((e) => e.startsWith("+")).length >= 6, "the arp plays in time");
 }
+// the track sequencers: polymeter, ratchets, ties
+{
+  const sg = song();
+  const pat = sg.patterns[0];
+  pat.length = 16;
+  pat.lens = [16, 12, 16, 16];
+  for (let i = 0; i < 16; i++) pat.steps[1][i] = { notes: [60 + (i % 12)] };
+  const e = createEngine(44100, sg, factoryInstrument);
+  const seen: number[][] = [[], [], [], []];
+  e.onTrackStep = (t, _p, st) => seen[t].push(st);
+  e.mode = "pattern";
+  e.play();
+  const buf = new Float32Array(128);
+  for (let i = 0; i < Math.ceil(44100 * 3.9 / 128); i++) e.render(buf); // a little under two passes of 16 steps
+  const t1 = seen[1].slice(0, 20).join(",");
+  check(t1.startsWith("0,1,2,3,4,5,6,7,8,9,10,11,0,1,2,3,0,1,2,3"), `a 12-step track loops inside a 16-step pattern (${t1})`);
+  check(seen[0].slice(14, 18).join(",") === "14,15,0,1", `track 1 runs its 16 steps then restarts with the pattern (${seen[0].slice(14, 18)})`);
+  // a ratcheted step plays its hits
+  const sg2 = song();
+  sg2.patterns[0].steps[0][0] = { notes: [60], ratchet: 4 };
+  const e2 = createEngine(44100, sg2, factoryInstrument);
+  let ons = 0;
+  const orig = e2.tracks[0].synth.noteOn.bind(e2.tracks[0].synth);
+  e2.tracks[0].synth.noteOn = (n: number, v?: number) => { ons++; orig(n, v); };
+  e2.mode = "pattern";
+  e2.play();
+  for (let i = 0; i < Math.ceil(44100 * 0.45 / 128); i++) e2.render(buf);
+  check(ons === 4, `a RATCH 4 step plays four hits (${ons})`);
+}
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");

@@ -37,6 +37,7 @@ class SynthProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.engine.onStep = (pattern, step, arrPos) => this.port.postMessage({ type: "pos", pattern, step, arrPos });
+    this.engine.onTrackStep = (track, pattern, step, arrPos) => this.port.postMessage({ type: "tpos", track, pattern, step, arrPos });
     this.port.onmessage = (e: MessageEvent<Msg>) => {
       const m = e.data;
       const en = this.engine;

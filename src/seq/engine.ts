@@ -8,19 +8,7 @@ import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
 import { MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
-
-interface PendingOff {
-  frames: number;
-  synth: Synth;
-  notes: number[];
-}
-
-interface PendingOn {
-  frames: number;
-  synth: Synth;
-  notes: number[];
-  vel: number;
-}
+import { SeqStep, ST_NOTE, ST_REST, ST_TIE, TrackSeq } from "./trackseq";
 
 export interface EngineTrack {
   synth: Synth;
@@ -49,14 +37,16 @@ export class Engine {
   /** Master volume, Q12 (4096 = 1.0). */
   masterQ12 = 3072;
   playing = false;
-  stepIndex = 0; // steps fired since play()
-  stepInPattern = 0;
+  stepIndex = 0; // steps entered by track 1 since play()
   arrPos = 0;
-  /** Called when a step fires (pattern index, step, arrangement position). */
+  /** Called when track 1 enters a step (pattern index, step, arrangement position). */
   onStep?: (pattern: number, step: number, arrPos: number) => void;
-  private framesToStep = 0;
-  private pending: PendingOff[] = [];
-  private late: PendingOn[] = [];
+  /** Called when any track enters a step. */
+  onTrackStep?: (track: number, pattern: number, step: number, arrPos: number) => void;
+  /** One step sequencer per track (polymeter, ties, slides, ratchets, nudge, chances). */
+  readonly seqs: TrackSeq[];
+  private patPos = 0;
+  private justStarted = false;
   // effects
   private bus = new FxBus();
   private master = new Master();
@@ -87,6 +77,7 @@ export class Engine {
     this.live = live;
     this.song = song;
     this.fxs = this.makeFx(song);
+    this.seqs = Array.from({ length: TRACKS }, (_, i) => this.makeSeq(i));
     this.applyTracks();
   }
 
@@ -122,9 +113,8 @@ export class Engine {
     this.applyTracks();
     this.patternIndex = Math.min(this.patternIndex, song.patterns.length - 1);
     this.arrPos = Math.min(this.arrPos, song.arrangement.length - 1);
-    const len = this.currentPattern().length;
-    if (this.stepInPattern >= len) this.stepInPattern = 0;
     this.tracks.forEach((t, i) => (t.mute = !!song.tracks[i]?.mute));
+    this.applyPattern(false, 0);
   }
 
   /** Hands every track's synth its mix, modulation setup and the tempo. */
@@ -152,50 +142,68 @@ export class Engine {
     return this.song.patterns[this.currentPatternIndex()] ?? this.song.patterns[0];
   }
 
+  private makeSeq(i: number): TrackSeq {
+    const seq = new TrackSeq({
+      on: (n, v) => { const t = this.tracks[i]; if (t && !t.mute) t.synth.noteOn(n, v); },
+      off: (n) => this.tracks[i]?.synth.noteOff(n),
+      slide: (on) => this.tracks[i]?.synth.setSlide?.(on),
+    });
+    seq.timeHook = (note, vel, period) => this.tracks[i]?.synth.stepDelay?.(note, vel, period) ?? 0;
+    seq.onStep = (idx) => {
+      this.onTrackStep?.(i, this.currentPatternIndex(), idx, this.arrPos);
+      if (i === 0) { this.onStep?.(this.currentPatternIndex(), idx, this.arrPos); this.stepIndex++; }
+    };
+    return seq;
+  }
+
+  /** Hands the current pattern's steps and the tracks' step timing to the sequencers; top: a new pattern begins, carry samples in. */
+  private applyPattern(top: boolean, carry: number): void {
+    const pat = this.currentPattern();
+    const gswing = Math.min(100, Math.round(this.song.swing * 250));
+    this.seqs.forEach((seq, i) => {
+      const ts = this.song.tracks[i];
+      seq.steps = (pat.steps[i] ?? []).map(toSeqStep);
+      seq.p = {
+        len: pat.lens?.[i] ?? Math.min(pat.length, MAX_STEPS),
+        div: ts?.seq?.div ?? 2, swing: ts?.seq?.swing ?? 0, gate: ts?.seq?.gate ?? 115, quantize: ts?.seq?.quantize ?? 1,
+      };
+      seq.globalSwing = gswing;
+      if (top) seq.top(carry);
+    });
+  }
+
   play(): void {
     this.playing = true;
     this.stepIndex = 0;
-    this.stepInPattern = 0;
     this.arrPos = 0;
-    this.framesToStep = 0;
+    this.patPos = 0;
+    this.justStarted = true;
+    this.applyPattern(false, 0);
+    for (const s of this.seqs) s.start();
     this.perform.start();
   }
 
   stop(): void {
     this.playing = false;
-    this.pending = [];
-    this.late = [];
+    for (const s of this.seqs) s.stop();
     for (const t of this.tracks) t.synth.allOff();
   }
 
-  private stepFrames(index: number): number {
-    const base = (this.sampleRate * 60) / this.song.bpm / 4;
-    return Math.round(base * (index % 2 === 0 ? 1 + this.song.swing : 1 - this.song.swing));
-  }
-
-  private fireStep(): void {
-    const pat = this.currentPattern();
-    const pi = this.currentPatternIndex();
-    this.onStep?.(pi, this.stepInPattern, this.arrPos);
-    for (let ti = 0; ti < Math.min(TRACKS, this.tracks.length); ti++) {
-      const t = this.tracks[ti];
-      const st: Step = pat.steps[ti]?.[this.stepInPattern] ?? null;
-      if (t.mute || !st) continue;
-      const vel = st.vel ?? 100;
-      const period = this.stepFrames(this.stepIndex);
-      const delay = t.synth.stepDelay?.(st.notes[0], vel, period) ?? 0;
-      if (delay > 0) this.late.push({ frames: delay, synth: t.synth, notes: st.notes, vel });
-      else for (const n of st.notes) t.synth.noteOn(n, vel);
-      const frames = delay + Math.max(1, Math.round(period * (st.gate ?? 0.9)));
-      this.pending.push({ frames, synth: t.synth, notes: st.notes });
-    }
-    this.framesToStep = this.stepFrames(this.stepIndex);
-    this.stepIndex++;
-    this.stepInPattern++;
-    if (this.stepInPattern >= Math.min(pat.length, MAX_STEPS)) {
-      this.stepInPattern = 0;
+  /** The sequencers' block: the pattern clock (a new pattern when the longest track has played through), then every track. */
+  private advanceSequencers(): void {
+    if (!this.playing) return;
+    const quarter = Math.round((this.sampleRate * 60) / this.song.bpm);
+    if (this.justStarted) this.justStarted = false;
+    else this.patPos += CTL;
+    let len = 0;
+    for (const s of this.seqs) len = Math.max(len, s.patternSamples(quarter));
+    if (len > 0 && this.patPos >= len) {
+      const carry = this.patPos - len;
+      this.patPos = carry;
       if (this.mode === "song") this.arrPos = (this.arrPos + 1) % this.song.arrangement.length;
+      this.applyPattern(true, carry);
     }
+    for (const s of this.seqs) s.tick(CTL, quarter);
   }
 
   /** Renders the synths of one CTL block into per-source float buffers (tracks, then the live keyboard). */
@@ -203,26 +211,9 @@ export class Engine {
     const sources = this.tracks.length + 1;
     while (this.tbuf.length < sources) { this.tbuf.push(new Float32Array(CTL)); this.sidebuf.push(new Float32Array(CTL)); }
     for (let i = 0; i < sources; i++) { this.tbuf[i].fill(0); this.sidebuf[i].fill(0); }
-    const live = this.tbuf[this.tracks.length];
-    let pos = 0;
-    while (pos < CTL) {
-      if (this.playing && this.framesToStep <= 0) this.fireStep();
-      let n = CTL - pos;
-      if (this.playing) n = Math.min(n, this.framesToStep);
-      for (const p of this.pending) n = Math.min(n, p.frames);
-      for (const p of this.late) n = Math.min(n, p.frames);
-      n = Math.max(1, n);
-      this.live.render(live, pos, n, this.sidebuf[this.tracks.length]);
-      this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], pos, n, this.sidebuf[i]));
-      pos += n;
-      if (this.playing) this.framesToStep -= n;
-      for (const p of this.pending) p.frames -= n;
-      for (const p of this.late) p.frames -= n;
-      for (const p of this.late) if (p.frames <= 0) for (const note of p.notes) p.synth.noteOn(note, p.vel);
-      this.late = this.late.filter((p) => p.frames > 0);
-      for (const p of this.pending) if (p.frames <= 0) for (const note of p.notes) p.synth.noteOff(note);
-      this.pending = this.pending.filter((p) => p.frames > 0);
-    }
+    this.advanceSequencers();
+    this.live.render(this.tbuf[this.tracks.length], 0, CTL, this.sidebuf[this.tracks.length]);
+    this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], 0, CTL, this.sidebuf[i]));
   }
 
   /** One source into the dry mix and the sends (fx.c mix_part). */
@@ -350,4 +341,13 @@ export function createEngine(sampleRate: number, song: Song, instrumentFor: (id:
     e.addTrack(s).mute = t.mute;
   });
   return e;
+}
+
+/** A song step as the sequencer plays it. */
+function toSeqStep(st: Step): SeqStep {
+  if (!st) return { notes: [], time: ST_REST };
+  return {
+    notes: st.notes, time: st.tie ? ST_TIE : ST_NOTE, vel: st.vel ?? 100, gate: st.gate,
+    accent: st.accent, slide: st.slide, ratchet: st.ratchet, nudge: st.nudge, probability: st.prob,
+  };
 }

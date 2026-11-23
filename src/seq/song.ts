@@ -1,7 +1,14 @@
 import { defaultInsert, InsertSetup } from "../fx/insert";
 import { ModSetup, sanitizeMod } from "../mod/setup";
-/** One step: notes (a chord), velocity 1..127 and gate length in steps. null = rest. */
-export type Step = { notes: number[]; vel?: number; gate?: number } | null;
+/**
+ * One step: notes (a chord), velocity 1..127, a gate length in steps (a long one holds the notes over later steps) and
+ * Felucca's step features: accent, slide into the next note, ratchet (1..4 hits), nudge (-8..7 sixteenths of the step, heard
+ * with QUANTIZE OFF), a tie (the previous note goes on) and a chance (1..100 %, 101 never) or condition (102..112). null = rest.
+ */
+export type Step = {
+  notes: number[]; vel?: number; gate?: number;
+  accent?: boolean; slide?: boolean; ratchet?: number; nudge?: number; tie?: boolean; prob?: number;
+} | null;
 
 export const TRACKS = 4;
 export const MAX_STEPS = 32;
@@ -10,6 +17,8 @@ export interface Pattern {
   name: string;
   length: number; // 4..32 steps (16ths)
   steps: Step[][]; // [track][step], each MAX_STEPS long
+  /** Per-track lengths (polymeter); a track without one runs the pattern's length. */
+  lens?: number[];
 }
 
 /** A track's place in the mix: level, pan and the sends (Felucca's P_LEVEL, P_PAN, P_DIST, P_CHOR, P_DLY, P_REV). */
@@ -25,6 +34,8 @@ export interface MixSetup extends InsertSetup {
 export interface TrackSetup extends MixSetup {
   patch: string; // instrument id (see instruments.ts); kept by name so a song survives a library change
   mute: boolean;
+  /** The track's step timing: DIV (a note value, ARP_RATES order), SWING 0..100, GATE 0..127, QUANTIZE (1 on). */
+  seq?: { div?: number; swing?: number; gate?: number; quantize?: number };
   /** The LFO and modulation matrix of the track (engine instruments). */
   mod?: ModSetup;
 }
@@ -55,7 +66,7 @@ export function emptyPattern(name: string, length = 16): Pattern {
 }
 
 export function clonePattern(p: Pattern, name = p.name): Pattern {
-  return { name, length: p.length, steps: p.steps.map((t) => t.map((s) => (s ? { ...s, notes: [...s.notes] } : null))) };
+  return { name, length: p.length, lens: p.lens && [...p.lens], steps: p.steps.map((t) => t.map((s) => (s ? { ...s, notes: [...s.notes] } : null))) };
 }
 
 /** Builds a pattern from per-track step lists (shorter lists are padded with rests). */
@@ -79,9 +90,16 @@ export function sanitizeSong(raw: unknown): Song | null {
           out.steps[t][j] = {
             notes: st.notes.map((n) => Math.round(clamp(n, 0, 127, 60))).slice(0, 8),
             vel: Math.round(clamp(st.vel, 1, 127, 100)),
-            gate: clamp(st.gate, 0.1, 8, 0.9),
+            gate: clamp(st.gate, 0.1, 16, 0.9),
+            ...(st.accent ? { accent: true } : {}),
+            ...(st.slide ? { slide: true } : {}),
+            ...(st.tie ? { tie: true } : {}),
+            ...(st.ratchet && st.ratchet > 1 ? { ratchet: Math.round(clamp(st.ratchet, 1, 4, 1)) } : {}),
+            ...(st.nudge ? { nudge: Math.round(clamp(st.nudge, -8, 7, 0)) } : {}),
+            ...(st.prob ? { prob: Math.round(clamp(st.prob, 1, 112, 100)) } : {}),
           };
       }
+    if (Array.isArray(p?.lens)) out.lens = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(p.lens?.[t], 1, MAX_STEPS, out.length)));
     return out;
   });
   const arrangement = (Array.isArray(s.arrangement) ? s.arrangement : [0])
@@ -105,6 +123,7 @@ export function sanitizeSong(raw: unknown): Song | null {
       ib: Math.round(clamp(t?.ib, 0, 127, d.ib)),
       ic: Math.round(clamp(t?.ic, 0, 127, d.ic)),
       mod: sanitizeMod(t?.mod),
+      ...(t?.seq ? { seq: { div: Math.round(clamp(t.seq.div, 0, 9, 2)), swing: Math.round(clamp(t.seq.swing, 0, 100, 0)), gate: Math.round(clamp(t.seq.gate, 0, 127, 115)), quantize: t.seq.quantize === 0 ? 0 : 1 } } : {}),
     };
   });
   const f = (s.fx ?? {}) as Partial<SongFx>;
