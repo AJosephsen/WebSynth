@@ -1,3 +1,4 @@
+import type { ModSetup } from "../mod/setup";
 import { factoryInstrument } from "../instruments";
 import { createEngine } from "../seq/engine";
 import { defaultSong, Song } from "../seq/song";
@@ -19,6 +20,8 @@ type Msg =
   | { type: "song"; song: Song; instruments?: Instrument[] }
   | { type: "mode"; mode: "pattern" | "song"; pattern: number }
   | { type: "midi"; track: number; status: number; d1: number; d2: number }
+  | { type: "liveMix"; dist: number; chorus: number; delay: number; reverb: number }
+  | { type: "liveMod"; mod: ModSetup | undefined }
   | { type: "play" }
   | { type: "stop" };
 
@@ -44,6 +47,8 @@ class SynthProcessor extends AudioWorkletProcessor {
           break;
         case "mode": en.mode = m.mode; en.patternIndex = m.pattern; break;
         case "midi": en.midi(m.track, m.status, m.d1, m.d2); break;
+        case "liveMix": en.liveMix = { ...en.liveMix, dist: m.dist, chorus: m.chorus, delay: m.delay, reverb: m.reverb }; break;
+        case "liveMod": en.liveMod = m.mod; en.live.setMod?.(m.mod); break;
         case "play": en.play(); break;
         case "stop": en.stop(); this.port.postMessage({ type: "stopped" }); break;
       }

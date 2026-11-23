@@ -2,6 +2,7 @@ import { clamp, mulq15 } from "../engines/dsp";
 import { CTL } from "../engines/types";
 import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Insert } from "../fx/insert";
+import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
 import { MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
@@ -38,6 +39,8 @@ export class Engine {
   tracks: EngineTrack[] = [];
   live: Synth;
   liveMix: MixSetup = { ...LIVE_MIX };
+  /** The LFO and matrix of the live keyboard's synth. */
+  liveMod: ModSetup | undefined;
   song: Song;
   mode: "pattern" | "song" = "song";
   patternIndex = 0; // the pattern that loops in pattern mode
@@ -129,6 +132,7 @@ export class Engine {
       if (s) { t.synth.setMix?.(s); t.synth.setMod?.(s.mod); }
     });
     this.live.setMix?.(this.liveMix);
+    this.live.setMod?.(this.liveMod);
     this.live.setBpm?.(this.song.bpm);
   }
 

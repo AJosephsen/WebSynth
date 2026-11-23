@@ -6,6 +6,8 @@ import { exportBank, loadSysex, loadUserPatches, saveUserPatches, toLibraryPatch
 import { factoryEntries, fm6Entry, LibraryEntry, loadUserEngineEntries, saveUserEngineEntries, userEngineEntry } from "./instruments";
 import { mountEngineEditor } from "./ui/engineeditor";
 import { mountKnobs } from "./ui/knobs";
+import { defaultMod, ModSetup } from "./mod/setup";
+import type { Instrument } from "./synth/synth";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -64,6 +66,13 @@ let library: LibraryEntry[] = [...factoryEntries, ...loadUserPatches().map(fm6En
 let current = library.find((e) => e.id === "TINE EP") ?? library[0];
 let node: AudioWorkletNode | undefined;
 
+let liveMod: ModSetup = defaultMod();
+/** Sends the instrument to the worklet along with its effect sends (a preset brings its own, as in Felucca). */
+function sendInstrument(inst: Instrument): void {
+  node?.port.postMessage({ type: "instrument", instrument: inst });
+  const [dist, chorus, delay, reverb] = inst.kind !== "fm6" && inst.fx ? inst.fx : [0, 0, 0, 25];
+  node?.port.postMessage({ type: "liveMix", dist, chorus, delay, reverb });
+}
 function persist(): void {
   saveUserPatches(library.filter((e) => e.fm6 && e.source === "user").map((e) => e.fm6!));
   saveUserEngineEntries(library);
@@ -79,7 +88,7 @@ function choose(e: LibraryEntry): void {
   current = e;
   if (e.fm6) { fm6Editor.load(e.fm6); engineEditor.clear(); }
   else { fm6Editor.clear(); engineEditor.load(e); }
-  node?.port.postMessage({ type: "instrument", instrument: e.instrument });
+  sendInstrument(e.instrument);
   lcdUpdate();
 }
 function select_(e: LibraryEntry): void {
@@ -118,7 +127,7 @@ $<HTMLButtonElement>("delete").onclick = () => {
 
 // ---- patch editors: FM6 voices and the other engines ----
 const fm6Editor = mountPatchEditor($("pe"), {
-  onChange: (patch) => node?.port.postMessage({ type: "instrument", instrument: { kind: "fm6", patch } }),
+  onChange: (patch) => sendInstrument({ kind: "fm6", patch }),
   saveNew: (patch) => {
     const entry = fm6Entry(toLibraryPatch(patch, "user"));
     library = [...library, entry];
@@ -138,7 +147,10 @@ const fm6Editor = mountPatchEditor($("pe"), {
   },
 });
 const engineEditor = mountEngineEditor($("ee"), {
-  onChange: (inst) => node?.port.postMessage({ type: "instrument", instrument: inst }),
+  onChange: (inst) => sendInstrument(inst),
+  getMod: () => liveMod,
+  onMod: (m) => { liveMod = m; node?.port.postMessage({ type: "liveMod", mod: m }); },
+  onMidi: (status, d1, d2) => node?.port.postMessage({ type: "midi", track: -1, status, d1, d2 }),
   saveNew: (inst, name) => {
     const entry = userEngineEntry(inst, name);
     library = [...library, entry];
@@ -256,6 +268,7 @@ startBtn.onclick = async () => {
   node = new AudioWorkletNode(ctx, "synth", { outputChannelCount: [2] });
   node.connect(ctx.destination);
   choose(current);
+  node.port.postMessage({ type: "liveMod", mod: liveMod });
   node.port.onmessage = (e) => seq.onMessage(e.data);
   seq.sync();
   startBtn.disabled = true;
