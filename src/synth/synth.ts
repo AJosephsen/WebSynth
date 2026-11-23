@@ -29,6 +29,8 @@ export interface Synth {
   /** The mix values of the block last rendered, modulated. Undefined: the matrix does not touch them. */
   readonly mixMod?: { pan: number; dist: number; chorus: number; delay: number; reverb: number };
   setBpm?(bpm: number): void;
+  /** Parameters the sequencer's locks and automation can move. */
+  readonly paramStore?: import("../seq/motion").ParamStore;
   /** A step's slide: the next legato note glides. */
   setSlide?(on: boolean): void;
   /** A MIDI controller: status 0xB0 (CC1 mod wheel, CC11 expression, CC121 reset) or 0xD0 (aftertouch). */

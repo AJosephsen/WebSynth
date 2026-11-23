@@ -164,5 +164,58 @@ void m5; void lr;
   for (let i = 0; i < Math.ceil(44100 * 0.45 / 128); i++) e2.render(buf);
   check(ons === 4, `a RATCH 4 step plays four hits (${ons})`);
 }
+// the song chain: a section repeats, a lane can play another pattern or stay silent
+{
+  const sg = song();
+  sg.patterns[0] = emptyPattern("A", 4);
+  sg.patterns[0].steps[0][0] = { notes: [60] };
+  sg.patterns.push(emptyPattern("B", 4));
+  sg.patterns[1].steps[0][0] = { notes: [67] };
+  sg.arrangement = [0, 0];
+  sg.sections = [{ repeat: 2 }, { lanes: [1, -2, -1, -1] }];
+  const e = createEngine(44100, sg, factoryInstrument);
+  const seen: string[] = [];
+  e.onStep = (p, st, ap) => seen.push(`${p}.${st}@${ap}`);
+  const played: number[] = [];
+  const orig = e.tracks[0].synth.noteOn.bind(e.tracks[0].synth);
+  e.tracks[0].synth.noteOn = (n: number, v?: number) => { played.push(n); orig(n, v); };
+  e.play();
+  const buf = new Float32Array(128);
+  for (let i = 0; i < Math.ceil(44100 * 2.4 / 128); i++) e.render(buf);
+  check(seen.slice(0, 9).join() === "0.0@0,0.1@0,0.2@0,0.3@0,0.0@0,0.1@0,0.2@0,0.3@0,1.0@1", `a section repeats, then the next (${seen.slice(0, 9)})`);
+  check(played.slice(0, 3).join() === "60,60,67", `a lane plays another pattern (${played.slice(0, 3)})`);
+}
+// motion: a lock holds for its step only, automation holds until the loop restarts
+{
+  const sg = song();
+  sg.patterns[0] = emptyPattern("M", 4);
+  for (let i = 0; i < 4; i++) sg.patterns[0].steps[0][i] = { notes: [60 + i] };
+  sg.patterns[0].motion = [
+    { track: 0, step: 1, param: 12, value: 40, lock: true }, // P_PAN
+    { track: 0, step: 2, param: 13, value: 50 }, // P_DIST
+  ];
+  const e = createEngine(44100, sg, factoryInstrument);
+  const store = e.tracks[0].synth.paramStore!;
+  let cur = -1;
+  e.onTrackStep = (t, _p, st) => { if (t === 0) cur = st; };
+  e.mode = "pattern";
+  e.play();
+  const l = new Float32Array(32), r = new Float32Array(32);
+  const at: Record<number, { pan: number; dist: number }> = {};
+  const second: Record<number, { pan: number; dist: number }> = {};
+  let pass = 0, prev = -1;
+  for (let b = 0; b < 800 && pass < 2; b++) {
+    e.renderStereo(l, r);
+    if (cur < prev) pass++;
+    prev = cur;
+    const rec = { pan: store.read(12), dist: store.read(13) };
+    if (pass === 0) at[cur] = rec; else second[cur] = rec;
+  }
+  check(at[1].pan === 40 && at[0].pan === 0 && at[2].pan === 0, `a lock holds for its step only (pan ${at[0].pan},${at[1].pan},${at[2].pan})`);
+  check(at[1].dist === 0 && at[2].dist === 50 && at[3].dist === 50, `automation holds from its step (dist ${at[1].dist},${at[2].dist},${at[3].dist})`);
+  check(second[0]?.dist === 0, `the loop's restart puts the sound's own value back (dist ${second[0]?.dist})`);
+  e.stop();
+  check(store.read(13) === 0 && store.read(12) === 0, "stop restores the sound's own values");
+}
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");

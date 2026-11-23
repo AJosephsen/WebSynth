@@ -11,6 +11,9 @@ export type Step = {
 } | null;
 
 export const TRACKS = 4;
+/** A motion record of a pattern: a parameter value at a step of a track; a lock lasts that step only. */
+export interface MotionRecord { track: number; step: number; param: number; value: number; lock?: boolean }
+export const MOTION_MAX = 128;
 export const MAX_STEPS = 32;
 
 export interface Pattern {
@@ -19,6 +22,8 @@ export interface Pattern {
   steps: Step[][]; // [track][step], each MAX_STEPS long
   /** Per-track lengths (polymeter); a track without one runs the pattern's length. */
   lens?: number[];
+  /** Step automation and parameter locks (param: a track parameter id, see engines/types.ts). */
+  motion?: MotionRecord[];
 }
 
 /** A track's place in the mix: level, pan and the sends (Felucca's P_LEVEL, P_PAN, P_DIST, P_CHOR, P_DLY, P_REV). */
@@ -49,6 +54,15 @@ export interface SongFx {
 }
 export const defaultSongFx = (): SongFx => ({ dtime: 1, dfdbk: 60, dcolor: 70, dmix: 90, rtype: 2, rsize: 90, rdamp: 60, crate: 40, cdepth: 60 });
 
+/** A section of the song chain (Felucca's row): how many loops it lasts and, per track, which pattern it plays. */
+export interface Section {
+  /** Loops of the section's clock track (the first track that is not silent), 1..16. */
+  repeat?: number;
+  /** Per track: a pattern index, -1 the section's own pattern, -2 silent. */
+  lanes?: number[];
+}
+export const LANE_DEFAULT = -1, LANE_SILENT = -2;
+
 export interface Song {
   bpm: number;
   swing: number; // 0..0.5
@@ -56,6 +70,8 @@ export interface Song {
   fx: SongFx;
   patterns: Pattern[]; // up to 16
   arrangement: number[]; // pattern indices, played in order (the pattern sequencer)
+  /** Repeats and per-track lanes of the sections (parallel to the arrangement). */
+  sections?: Section[];
 }
 
 export const MAX_PATTERNS = 16;
@@ -66,7 +82,7 @@ export function emptyPattern(name: string, length = 16): Pattern {
 }
 
 export function clonePattern(p: Pattern, name = p.name): Pattern {
-  return { name, length: p.length, lens: p.lens && [...p.lens], steps: p.steps.map((t) => t.map((s) => (s ? { ...s, notes: [...s.notes] } : null))) };
+  return { name, length: p.length, lens: p.lens && [...p.lens], motion: p.motion && p.motion.map((m) => ({ ...m })), steps: p.steps.map((t) => t.map((s) => (s ? { ...s, notes: [...s.notes] } : null))) };
 }
 
 /** Builds a pattern from per-track step lists (shorter lists are padded with rests). */
@@ -99,6 +115,17 @@ export function sanitizeSong(raw: unknown): Song | null {
             ...(st.prob ? { prob: Math.round(clamp(st.prob, 1, 112, 100)) } : {}),
           };
       }
+    if (Array.isArray(p?.motion)) {
+      const seen = new Set<string>();
+      const recs = p.motion.slice(0, MOTION_MAX).flatMap((m) => {
+        const r = { track: Math.round(clamp(m?.track, 0, TRACKS - 1, 0)), step: Math.round(clamp(m?.step, 0, MAX_STEPS - 1, 0)), param: Math.round(clamp(m?.param, 0, 127, 0)), value: Math.round(clamp(m?.value, -64, 127, 0)), ...(m?.lock ? { lock: true } : {}) };
+        const k = `${r.track}:${r.step}:${r.param}`;
+        if (seen.has(k)) return [];
+        seen.add(k);
+        return [r];
+      });
+      if (recs.length) out.motion = recs;
+    }
     if (Array.isArray(p?.lens)) out.lens = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(p.lens?.[t], 1, MAX_STEPS, out.length)));
     return out;
   });
@@ -135,7 +162,15 @@ export function sanitizeSong(raw: unknown): Song | null {
     rdamp: Math.round(clamp(f.rdamp, 0, 127, df.rdamp)), crate: Math.round(clamp(f.crate, 0, 127, df.crate)),
     cdepth: Math.round(clamp(f.cdepth, 0, 127, df.cdepth)),
   };
-  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arrangement.length ? arrangement : [0] };
+  const arr = arrangement.length ? arrangement : [0];
+  const rawSections = Array.isArray(s.sections) ? s.sections : [];
+  const sections = arr.map((_, i): Section => {
+    const r = rawSections[i];
+    const repeat = Math.round(clamp(r?.repeat, 1, 16, 1));
+    const lanes = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(r?.lanes?.[t], -2, patterns.length - 1, -1)));
+    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}) };
+  });
+  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes) ? { sections } : {}) };
 }
 
 /** The song the app starts with. */

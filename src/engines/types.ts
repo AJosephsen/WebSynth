@@ -11,7 +11,7 @@ export const P_PAN = 12, P_DIST = 13, P_CHOR = 14, P_DLY = 15, P_REV = 16,
   P_ED_FLT = 25, P_ED_PIT = 26, P_ED_SHP = 27, P_LSYNC = 28, P_LTRIG = 29, P_LPOL = 30,
   P_M1SRC = 31, // 4 slots of SRC, DST, AMT: P_M1SRC .. P_M1SRC + 11
   P_ATDST = 43, P_ATAMT = 44,
-  P_MUTE = 45, P_VOICE = 46, P_GLIDE = 47, P_GLMODE = 48, P_PRIO = 49, P_ALLOC = 50, P_DETUNE = 51, P_SPRD = 52, P_COUNT = 53;
+  P_MUTE = 45, P_VOICE = 46, P_GLIDE = 47, P_GLMODE = 48, P_PRIO = 49, P_ALLOC = 50, P_DETUNE = 51, P_SPRD = 52, P_DEC = 53, P_SUS = 54, P_COUNT = 55;
 
 /** Parameter display kinds (felucca_engine.h F_*). */
 export const enum F { INT, PCT, BIPCT, TIME, LFOHZ, CUTOFF, DB, SEMI, ENUM, BPM, NOTE, ONOFF, OCT, STEPS }

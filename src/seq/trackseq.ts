@@ -78,6 +78,8 @@ export class TrackSeq {
   fill = false;
   /** The matrix's TIME: samples a step plays late (0: on time). */
   timeHook?: (note: number, vel: number, period: number) => number;
+  /** A step plays (or misses its chance): the motion layer applies its locks and automation before the notes. */
+  onPlay?: (idx: number, played: boolean) => void;
   /** Called as a step is entered (index within the track). */
   onStep?: (idx: number) => void;
   private n = 0;
@@ -219,7 +221,9 @@ export class TrackSeq {
   }
   private play(idx: number, period: number): void {
     const s = this.stepAt(idx);
-    this.step(s, idx, period, this.miss(s, idx) ? SEQ_MISS : SEQ_ROLLED);
+    const missed = this.miss(s, idx);
+    this.onPlay?.(idx, !missed);
+    this.step(s, idx, period, missed ? SEQ_MISS : SEQ_ROLLED);
   }
   private playOn(period: number): void {
     const h = this.timeOf(this.idx, period);

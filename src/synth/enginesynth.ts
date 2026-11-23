@@ -4,12 +4,13 @@ import { clamp, mulq15, mulq16, pitchInc } from "../engines/dsp";
 import {
   CTL, EngineDef, EngVoice, P_ATAMT, P_ATDST, P_ATK, P_CHOR, P_DIST, P_DLY, P_E0, P_ED_FLT, P_ED_PIT, P_ED_SHP, P_FTYPE,
   P_LD_AMP, P_LD_FLT, P_LD_PIT, P_LD_SHP, P_LFADE, P_LPHASE, P_LPOL, P_LRATE, P_LSYNC, P_LTRIG, P_LWAVE, P_M1SRC, P_PAN, P_REL,
-  P_REV, P_ALLOC, P_DETUNE, P_GLIDE, P_GLMODE, P_PRIO, P_SPRD, P_VOICE, Track, Vmod,
+  P_REV, P_ALLOC, P_DETUNE, P_GLIDE, P_GLMODE, P_PRIO, P_SPRD, P_VOICE, P_DEC, P_SUS, Track, Vmod,
 } from "../engines/types";
 import { ENV_EXP, ENV_LIN } from "../engines/felucca-tables";
 import { lfoTick, Modulator } from "../mod/mod";
 import { VoiceLayer } from "./voicelayer";
 import { ModSetup } from "../mod/setup";
+import type { ParamStore } from "../seq/motion";
 import type { Instrument, Synth } from "./synth";
 
 type EngineInstrument = Extract<Instrument, { kind: "engine" }>;
@@ -18,12 +19,19 @@ export class EnginePoly implements Synth {
   gain = 1;
   private track = new Track();
   private voices: EngVoice[];
-  private env = [0, 70, 100, 40]; // ATK DEC SUS REL
   private fenv = 0;
   private layer: VoiceLayer;
   private buf = new Int32Array(CTL);
   private sbuf = new Int32Array(CTL); // SPREAD: the left voices
   spreadActive = false;
+  /** Values the sequencer's locks and automation hold over the instrument's own. */
+  private readonly held = new Map<number, number>();
+  readonly paramStore: ParamStore = {
+    read: (id) => this.track.p[id],
+    write: (id, v) => { this.held.set(id, v); this.track.p[id] = v; },
+    release: (id, v) => { this.held.delete(id); this.track.p[id] = v; },
+  };
+  private reapply(): void { for (const [id, v] of this.held) this.track.p[id] = v; }
   get voiceMode(): number { return this.track.p[P_VOICE]; }
   get spreadAmount(): number { return this.track.p[P_SPRD]; }
   private pos = CTL;
@@ -46,9 +54,10 @@ export class EnginePoly implements Synth {
   setInstrument(inst: EngineInstrument): void {
     const p = this.track.p;
     inst.params.forEach((v, k) => (p[P_E0 + k] = v));
-    this.env = [...inst.env];
-    p[P_ATK] = this.env[0];
-    p[P_REL] = this.env[3];
+    p[P_ATK] = inst.env[0];
+    p[P_DEC] = inst.env[1];
+    p[P_SUS] = inst.env[2];
+    p[P_REL] = inst.env[3];
     p[P_FTYPE] = inst.ftype ?? 0;
     this.fenv = inst.fenv;
     p[P_ED_FLT] = inst.fenv;
@@ -60,6 +69,7 @@ export class EnginePoly implements Synth {
     p[P_ALLOC] = vp?.alloc ?? 0;
     p[P_DETUNE] = vp?.detune ?? 40;
     p[P_SPRD] = vp?.spread ?? 0;
+    this.reapply();
   }
 
   setBpm(bpm: number): void { this.bpm = bpm; }
@@ -67,6 +77,7 @@ export class EnginePoly implements Synth {
   setMix(m: { pan: number; dist: number; chorus: number; delay: number; reverb: number }): void {
     const p = this.track.p;
     p[P_PAN] = m.pan; p[P_DIST] = m.dist; p[P_CHOR] = m.chorus; p[P_DLY] = m.delay; p[P_REV] = m.reverb;
+    this.reapply();
   }
 
   setMod(m: ModSetup | undefined): void {
@@ -100,17 +111,18 @@ export class EnginePoly implements Synth {
   allOff(): void { this.layer.allOff(); }
 
   private envTick(v: EngVoice): number {
-    const sus = this.env[2] << 17;
+    const p = this.track.p;
+    const sus = p[P_SUS] << 17;
     switch (v.stage) {
       case 1:
-        v.env += ENV_LIN[this.env[0]];
+        v.env += ENV_LIN[p[P_ATK] & 127];
         if (v.env >= 1 << 24) { v.env = 1 << 24; v.stage = 2; }
         break;
       case 2:
-        v.env += mulq16(sus - v.env, ENV_EXP[this.env[1]]);
+        v.env += mulq16(sus - v.env, ENV_EXP[p[P_DEC] & 127]);
         break;
       case 3:
-        v.env -= mulq16(v.env, ENV_EXP[this.env[3]]);
+        v.env -= mulq16(v.env, ENV_EXP[p[P_REL] & 127]);
         if (v.env < 1 << 12) { v.env = 0; v.stage = 0; v.active = 0; }
         break;
       default:

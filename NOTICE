@@ -37,5 +37,6 @@ src/fx/perform.ts: TypeScript port of Felucca's performance layer (perform.c: RE
 src/synth/voicelayer.ts: TypeScript port of Felucca's voice allocation (voice.c: POLY / MONO / LEGATO / UNISON, priorities, glide, detune; GPL-3.0-only). SPREAD follows fx.c mix_spread.
 src/synth/arp.ts, src/synth/chord.ts, src/synth/noteinput.ts: TypeScript ports of Felucca's arpeggiator (seq.c) and chord keys (chord.c; GPL-3.0-only).
 src/seq/trackseq.ts: TypeScript port of Felucca's step sequencer (seq.c: per-track length, division, swing and gate, ties, slides, ratchets, nudge, chances and conditions; GPL-3.0-only).
+src/seq/motion.ts: TypeScript port of Felucca's step automation and parameter locks (motion.c); the song sections follow song_chain.c (repeats, per-track lanes; GPL-3.0-only).
 src/mod/mod.ts: TypeScript port of Felucca's modulation matrix (mod.c) and track LFO (voice.c: waves, SYNC, FADE, S&H, SLEW; GPL-3.0-only).
 tests/ins-gold.txt is reference output of that code.

@@ -7,7 +7,8 @@ import { NoteInput } from "../synth/noteinput";
 import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
-import { MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
+import { LANE_DEFAULT, LANE_SILENT, MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
+import { Motion } from "./motion";
 import { SeqStep, ST_NOTE, ST_REST, ST_TIE, TrackSeq } from "./trackseq";
 
 export interface EngineTrack {
@@ -45,6 +46,8 @@ export class Engine {
   onTrackStep?: (track: number, pattern: number, step: number, arrPos: number) => void;
   /** One step sequencer per track (polymeter, ties, slides, ratchets, nudge, chances). */
   readonly seqs: TrackSeq[];
+  /** Step automation and locks per track. */
+  readonly motions: Motion[];
   private patPos = 0;
   private justStarted = false;
   // effects
@@ -77,6 +80,7 @@ export class Engine {
     this.live = live;
     this.song = song;
     this.fxs = this.makeFx(song);
+    this.motions = Array.from({ length: TRACKS }, (_, i) => new Motion(() => this.tracks[i]?.synth.paramStore));
     this.seqs = Array.from({ length: TRACKS }, (_, i) => this.makeSeq(i));
     this.applyTracks();
   }
@@ -142,33 +146,54 @@ export class Engine {
     return this.song.patterns[this.currentPatternIndex()] ?? this.song.patterns[0];
   }
 
+  /** The pattern a track plays in the current section (a lane may name another one), undefined: the track is silent. */
+  private lanePattern(track: number): Pattern | undefined {
+    const lane = this.mode === "song" ? this.song.sections?.[this.arrPos]?.lanes?.[track] ?? LANE_DEFAULT : LANE_DEFAULT;
+    if (lane === LANE_SILENT) return undefined;
+    return lane >= 0 ? this.song.patterns[lane] ?? this.currentPattern() : this.currentPattern();
+  }
+
+  /** The section's clock track: the first one that is not silent. */
+  private clockTrack(): number {
+    for (let i = 0; i < TRACKS; i++) if (this.lanePattern(i)) return i;
+    return 0;
+  }
+
   private makeSeq(i: number): TrackSeq {
     const seq = new TrackSeq({
       on: (n, v) => { const t = this.tracks[i]; if (t && !t.mute) t.synth.noteOn(n, v); },
       off: (n) => this.tracks[i]?.synth.noteOff(n),
       slide: (on) => this.tracks[i]?.synth.setSlide?.(on),
     });
+    seq.onPlay = (idx, played) => this.motions[i].step(idx, played);
     seq.timeHook = (note, vel, period) => this.tracks[i]?.synth.stepDelay?.(note, vel, period) ?? 0;
     seq.onStep = (idx) => {
-      this.onTrackStep?.(i, this.currentPatternIndex(), idx, this.arrPos);
-      if (i === 0) { this.onStep?.(this.currentPatternIndex(), idx, this.arrPos); this.stepIndex++; }
+      const pi = this.song.patterns.indexOf(this.lanePattern(i) ?? this.currentPattern());
+      this.onTrackStep?.(i, pi, idx, this.arrPos);
+      if (i === 0) { this.onStep?.(pi, idx, this.arrPos); this.stepIndex++; }
     };
     return seq;
   }
 
   /** Hands the current pattern's steps and the tracks' step timing to the sequencers; top: a new pattern begins, carry samples in. */
   private applyPattern(top: boolean, carry: number): void {
-    const pat = this.currentPattern();
     const gswing = Math.min(100, Math.round(this.song.swing * 250));
     this.seqs.forEach((seq, i) => {
       const ts = this.song.tracks[i];
-      seq.steps = (pat.steps[i] ?? []).map(toSeqStep);
-      seq.p = {
-        len: pat.lens?.[i] ?? Math.min(pat.length, MAX_STEPS),
-        div: ts?.seq?.div ?? 2, swing: ts?.seq?.swing ?? 0, gate: ts?.seq?.gate ?? 115, quantize: ts?.seq?.quantize ?? 1,
-      };
+      const pat = this.lanePattern(i);
+      if (pat) {
+        seq.steps = (pat.steps[i] ?? []).map(toSeqStep);
+        seq.p = {
+          len: pat.lens?.[i] ?? Math.min(pat.length, MAX_STEPS),
+          div: ts?.seq?.div ?? 2, swing: ts?.seq?.swing ?? 0, gate: ts?.seq?.gate ?? 115, quantize: ts?.seq?.quantize ?? 1,
+        };
+      } else { // a silent lane: a bar of nothing
+        seq.steps = [];
+        seq.p = { len: 16, div: 2, swing: 0, gate: 115, quantize: 1 };
+      }
       seq.globalSwing = gswing;
-      if (top) seq.top(carry);
+      this.motions[i].events = (pat?.motion ?? []).filter((m) => m.track === i).map((m) => ({ step: m.step, param: m.param, value: m.value, lock: m.lock }));
+      if (top) { seq.top(carry); this.motions[i].restore(); }
     });
   }
 
@@ -180,12 +205,14 @@ export class Engine {
     this.justStarted = true;
     this.applyPattern(false, 0);
     for (const s of this.seqs) s.start();
+    for (const m of this.motions) m.begin();
     this.perform.start();
   }
 
   stop(): void {
     this.playing = false;
     for (const s of this.seqs) s.stop();
+    for (const m of this.motions) m.end();
     for (const t of this.tracks) t.synth.allOff();
   }
 
@@ -195,8 +222,8 @@ export class Engine {
     const quarter = Math.round((this.sampleRate * 60) / this.song.bpm);
     if (this.justStarted) this.justStarted = false;
     else this.patPos += CTL;
-    let len = 0;
-    for (const s of this.seqs) len = Math.max(len, s.patternSamples(quarter));
+    const repeat = this.mode === "song" ? this.song.sections?.[this.arrPos]?.repeat ?? 1 : 1;
+    const len = this.seqs[this.clockTrack()].patternSamples(quarter) * repeat;
     if (len > 0 && this.patPos >= len) {
       const carry = this.patPos - len;
       this.patPos = carry;

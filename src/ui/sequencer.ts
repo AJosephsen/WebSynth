@@ -6,9 +6,13 @@ import { engineById } from "../engines/registry";
 import { defaultMod } from "../mod/setup";
 import { demoSongs } from "../seq/songs";
 import { ARP_RATES } from "../synth/arp";
+import {
+  P_ATK, P_CHOR, P_DEC, P_DETUNE, P_DIST, P_DLY, P_E0, P_ED_FLT, P_ED_PIT, P_ED_SHP, P_GLIDE, P_LD_AMP, P_LD_FLT, P_LD_PIT, P_LD_SHP,
+  P_LFADE, P_LRATE, P_PAN, P_REL, P_REV, P_SPRD, P_SUS,
+} from "../engines/types";
 import { applyModInput, modPanelHtml } from "./modpanel";
 import {
-  clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
+  LANE_DEFAULT, LANE_SILENT, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
 } from "../seq/song";
 
 const KEY = "websynth.song.v1";
@@ -18,6 +22,19 @@ const isBlack = (n: number) => [1, 3, 6, 8, 10].includes(n % 12);
 const VELS = [50, 80, 100, 127];
 const GATES = [0.5, 0.9, 1.8, 3.6, 7.5];
 const ROWS = 24;
+interface MParam { id: number; label: string; min: number; max: number }
+const MOTION_FIXED: MParam[] = [
+  { id: P_ATK, label: "Attack", min: 0, max: 127 }, { id: P_DEC, label: "Decay", min: 0, max: 127 }, { id: P_SUS, label: "Sustain", min: 0, max: 127 },
+  { id: P_REL, label: "Release", min: 0, max: 127 }, { id: P_ED_FLT, label: "Env > filter", min: -64, max: 63 },
+  { id: P_ED_PIT, label: "Env > pitch", min: -64, max: 63 }, { id: P_ED_SHP, label: "Env > shape", min: -64, max: 63 },
+  { id: P_LRATE, label: "LFO rate", min: 0, max: 127 }, { id: P_LFADE, label: "LFO fade", min: 0, max: 127 },
+  { id: P_LD_PIT, label: "LFO > pitch", min: -64, max: 63 }, { id: P_LD_FLT, label: "LFO > filter", min: -64, max: 63 },
+  { id: P_LD_SHP, label: "LFO > shape", min: -64, max: 63 }, { id: P_LD_AMP, label: "LFO > amp", min: 0, max: 127 },
+  { id: P_DIST, label: "Dist", min: 0, max: 127 }, { id: P_CHOR, label: "Chorus send", min: 0, max: 127 },
+  { id: P_DLY, label: "Delay send", min: 0, max: 127 }, { id: P_REV, label: "Reverb send", min: 0, max: 127 },
+  { id: P_PAN, label: "Pan", min: -64, max: 63 }, { id: P_GLIDE, label: "Glide", min: 0, max: 127 },
+  { id: P_DETUNE, label: "Detune", min: 0, max: 127 }, { id: P_SPRD, label: "Spread", min: 0, max: 127 },
+];
 const NUDGES = [0, -4, -2, 2, 4];
 const PROBS = [0, 75, 50, 25, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112];
 const COND_TXT = ["1:2", "2:2", "1:3", "2:3", "3:3", "1:4", "2:4", "3:4", "4:4", "FILL", "!FILL"];
@@ -58,6 +75,9 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   let playStep = -1;
   let playArr = -1;
   const modOpen = new Set<number>();
+  let selStep = 0;
+  let mParam = P_PAN;
+  let mValue = 0;
 
   root.innerHTML = `
     <section class="module transport"><h4>Transport</h4>
@@ -89,9 +109,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         <button id="sq-oct-d">Octave −</button><button id="sq-oct-u">Octave +</button>
       </div>
       <div class="roll-wrap"><div id="sq-roll" class="roll"></div></div>
+      <div class="seq-bar" id="sq-motion"></div>
     </section>
     <section class="module"><h4>Pattern sequencer</h4>
       <div class="seq-bar"><span id="sq-arr" class="arr"></span></div>
+      <div class="seq-bar" id="sq-sec"></div>
       <div class="seq-bar">
         <button id="sq-arr-add">Append selected pattern</button>
         <button id="sq-arr-left">◀ Move</button><button id="sq-arr-right">Move ▶</button>
@@ -188,7 +210,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const steps = cur().steps[track];
     let html = `<div class="rl" style="--cols:${len}">`;
     html += `<div class="lab small">step</div>`;
-    for (let s = 0; s < len; s++) html += `<div class="led${s % 4 === 0 ? " beat" : ""}" data-s="${s}"></div>`;
+    for (let s = 0; s < len; s++) html += `<div class="led${s % 4 === 0 ? " beat" : ""}${s === selStep ? " selstep" : ""}" data-s="${s}" data-led="${s}"></div>`;
     for (let r = ROWS - 1; r >= 0; r--) {
       const n = base + r;
       const label = isDrum ? DRUM_LANES[n] ?? "" : n % 12 === 0 ? noteName(n) : "";
@@ -220,12 +242,61 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     fxRow("prb", "chance", (st) => probText(st.prob), (st) => !!st.prob);
     root.querySelector("#sq-roll")!.innerHTML = html + "</div>";
     markPlayhead();
+    renderMotion();
+  }
+
+  /** Parameters the current track's motion can move: the fixed ones and the engine's E1..E8. */
+  function motionParams(): MParam[] {
+    const inst = deps.library().find((p) => p.id === song.tracks[track].patch)?.instrument;
+    const list = [...MOTION_FIXED];
+    if (inst?.kind === "engine") {
+      const def = engineById(inst.engine)?.def;
+      def?.edit.forEach((d, k) => list.push({ id: P_E0 + k, label: `E${k + 1} ${d.label}`, min: d.min, max: d.max }));
+    }
+    return list;
+  }
+
+  /** Step automation and parameter locks of the current track and pattern. */
+  function renderMotion(): void {
+    const list = motionParams();
+    if (!list.some((p) => p.id === mParam)) mParam = list[0].id;
+    const cp = list.find((p) => p.id === mParam)!;
+    mValue = Math.min(cp.max, Math.max(cp.min, mValue));
+    const recs = (cur().motion ?? []).map((m, i) => ({ m, i })).filter((x) => x.m.track === track).sort((a, b) => a.m.step - b.m.step);
+    $("sq-motion").innerHTML = `<h5>Motion · step ${selStep + 1}</h5>
+      <label>Parameter <select data-mo="param">${list.map((p) => `<option value="${p.id}"${p.id === mParam ? " selected" : ""}>${p.label}</option>`).join("")}</select></label>
+      <label class="kc"><span>Value</span><input type="range" data-mo="value" min="${cp.min}" max="${cp.max}" value="${mValue}"><output>${mValue}</output></label>
+      <button data-mo-act="lock">Lock on step ${selStep + 1}</button><button data-mo-act="auto">Automate from step ${selStep + 1}</button>
+      <span class="hint">Click a step LED to choose the step. A lock holds for its step; automation holds until changed.</span>
+      <div class="mrecs">${recs.map(({ m, i }) => `<span class="chip">step ${m.step + 1} · ${list.find((p) => p.id === m.param)?.label ?? m.param} = ${m.value} · ${m.lock ? "lock" : "auto"} <button data-mo-del="${i}">×</button></span>`).join("")}</div>`;
   }
 
   function renderArr(): void {
     $("sq-arr").innerHTML = song.arrangement
-      .map((p, i) => `<button data-a="${i}" class="chip${i === arrSel ? " sel" : ""}${playing && mode === "song" && i === playArr ? " now" : ""}">${i + 1}: ${song.patterns[p]?.name ?? "?"}</button>`)
+      .map((p, i) => {
+        const sec = song.sections?.[i];
+        const mark = `${sec?.repeat && sec.repeat > 1 ? ` ×${sec.repeat}` : ""}${sec?.lanes?.some((l) => l !== LANE_DEFAULT) ? " ◈" : ""}`;
+        return `<button data-a="${i}" class="chip${i === arrSel ? " sel" : ""}${playing && mode === "song" && i === playArr ? " now" : ""}">${i + 1}: ${song.patterns[p]?.name ?? "?"}${mark}</button>`;
+      })
       .join("");
+    renderSection();
+  }
+
+  /** Keeps the sections parallel to the arrangement. */
+  function ensureSections(): Section[] {
+    song.sections = song.arrangement.map((_, i) => song.sections?.[i] ?? {});
+    return song.sections;
+  }
+
+  /** The chosen section: its repeat and, per track, the pattern it plays. */
+  function renderSection(): void {
+    const el = $("sq-sec");
+    if (arrSel < 0) { el.innerHTML = '<span class="hint">Select a section to set its repeats and per-track patterns.</span>'; return; }
+    const sec = song.sections?.[arrSel] ?? {};
+    const lanes = sec.lanes ?? Array(TRACKS).fill(LANE_DEFAULT);
+    const opts = (v: number) => `<option value="${LANE_DEFAULT}"${v === LANE_DEFAULT ? " selected" : ""}>section's own</option><option value="${LANE_SILENT}"${v === LANE_SILENT ? " selected" : ""}>silent</option>${song.patterns.map((p, i) => `<option value="${i}"${v === i ? " selected" : ""}>${i + 1}. ${p.name}</option>`).join("")}`;
+    el.innerHTML = `<label>Repeat <select data-sec="repeat">${Array.from({ length: 16 }, (_, k) => `<option${(sec.repeat ?? 1) === k + 1 ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>` +
+      Array.from({ length: TRACKS }, (_, t) => `<label>Track ${t + 1} <select data-sec="lane${t}">${opts(lanes[t])}</select></label>`).join("");
   }
 
   function markPlayhead(): void {
@@ -271,6 +342,26 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     if (v) {
       const st = cur().steps[track][Number(v.dataset.vs)];
       if (st) { st.vel = VELS[(VELS.findIndex((x) => x >= (st.vel ?? 100)) + 1) % VELS.length]; commit(); renderRoll(); }
+      return;
+    }
+    const led = el.closest<HTMLElement>("[data-led]");
+    if (led) { selStep = Number(led.dataset.led); renderRoll(); return; }
+    const mact = el.closest<HTMLElement>("[data-mo-act]");
+    if (mact) {
+      const p = cur();
+      const motion = (p.motion ??= []);
+      const i = motion.findIndex((m) => m.track === track && m.step === selStep && m.param === mParam);
+      const rec = { track, step: selStep, param: mParam, value: mValue, ...(mact.dataset.moAct === "lock" ? { lock: true } : {}) };
+      if (i >= 0) motion[i] = rec; else if (motion.length < 128) motion.push(rec);
+      commit(); renderMotion();
+      return;
+    }
+    const mdel = el.closest<HTMLElement>("[data-mo-del]");
+    if (mdel) {
+      const p = cur();
+      p.motion?.splice(Number(mdel.dataset.moDel), 1);
+      if (p.motion && !p.motion.length) delete p.motion;
+      commit(); renderMotion();
       return;
     }
     const f = el.closest<HTMLElement>("[data-fs]");
@@ -322,6 +413,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
 
   root.addEventListener("input", (e) => {
     const el = e.target as HTMLInputElement;
+    if (el.dataset.mo) {
+      if (el.dataset.mo === "param") { mParam = Number(el.value); renderMotion(); }
+      else { mValue = Number(el.value); const out = el.parentElement?.querySelector("output"); if (out) out.textContent = String(mValue); }
+      return;
+    }
     const trk = el.closest<HTMLElement>(".trk");
     if (trk && el.closest(".modp")) {
       const i = Number(trk.dataset.t);
@@ -359,6 +455,19 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
 
   root.addEventListener("change", (e) => {
     const el = e.target as HTMLElement;
+    if (el.dataset.sec && arrSel >= 0) {
+      const sec = ensureSections()[arrSel];
+      const v = Number((el as HTMLSelectElement).value);
+      if (el.dataset.sec === "repeat") { if (v > 1) sec.repeat = v; else delete sec.repeat; }
+      else {
+        const t = Number(el.dataset.sec.slice(4));
+        sec.lanes ??= Array(TRACKS).fill(LANE_DEFAULT);
+        sec.lanes[t] = v;
+        if (sec.lanes.every((l) => l === LANE_DEFAULT)) delete sec.lanes;
+      }
+      commit(); renderArr();
+      return;
+    }
     const trk = el.closest<HTMLElement>(".trk");
     if (trk && el.dataset.act === "patch") {
       const i = Number(trk.dataset.t);
@@ -422,8 +531,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   $("sq-del").onclick = () => {
     if (song.patterns.length <= 1) return;
     song.patterns.splice(pat, 1);
-    song.arrangement = song.arrangement.filter((p) => p !== pat).map((p) => (p > pat ? p - 1 : p));
-    if (!song.arrangement.length) song.arrangement = [0];
+    const secs = ensureSections();
+    const keep = song.arrangement.map((p) => p !== pat);
+    song.arrangement = song.arrangement.filter((_, i) => keep[i]).map((p) => (p > pat ? p - 1 : p));
+    song.sections = secs.filter((_, i) => keep[i]).map((x) => (x.lanes ? { ...x, lanes: x.lanes.map((l) => (l === pat ? LANE_DEFAULT : l > pat ? l - 1 : l)) } : x));
+    if (!song.arrangement.length) { song.arrangement = [0]; song.sections = [{}]; }
     pat = Math.min(pat, song.patterns.length - 1);
     arrSel = -1;
     commit(); renderAll();
@@ -432,12 +544,15 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   $("sq-oct-u").onclick = () => { base = Math.min(96, base + 12); renderRoll(); };
   $("sq-arr-add").onclick = () => {
     if (song.arrangement.length >= MAX_ARRANGEMENT) return;
+    ensureSections();
     song.arrangement.push(pat);
+    song.sections!.push({});
     arrSel = song.arrangement.length - 1;
     commit(); renderArr();
   };
   $("sq-arr-del").onclick = () => {
     if (arrSel < 0 || song.arrangement.length <= 1) return;
+    ensureSections().splice(arrSel, 1);
     song.arrangement.splice(arrSel, 1);
     arrSel = Math.min(arrSel, song.arrangement.length - 1);
     commit(); renderArr();
@@ -445,7 +560,9 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   const move = (d: number) => {
     const j = arrSel + d;
     if (arrSel < 0 || j < 0 || j >= song.arrangement.length) return;
+    const secs = ensureSections();
     [song.arrangement[arrSel], song.arrangement[j]] = [song.arrangement[j], song.arrangement[arrSel]];
+    [secs[arrSel], secs[j]] = [secs[j], secs[arrSel]];
     arrSel = j;
     commit(); renderArr();
   };
