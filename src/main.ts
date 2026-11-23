@@ -5,6 +5,7 @@ import { patchName } from "./fm6/patch";
 import { exportBank, loadSysex, loadUserPatches, saveUserPatches, toLibraryPatch } from "./fm6/library";
 import { factoryEntries, fm6Entry, LibraryEntry, loadUserEngineEntries, saveUserEngineEntries, userEngineEntry } from "./instruments";
 import { mountEngineEditor } from "./ui/engineeditor";
+import { mountKnobs } from "./ui/knobs";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -150,6 +151,14 @@ choose(current);
 
 // ---- sequencer ----
 const seq = mountSequencer($("seq"), { library: () => library, send: (m) => node?.port.postMessage(m) });
+
+// ---- knobs: every slider becomes a rotary control; the LCD shows its name and value while it moves ----
+let lcdTimer = 0;
+mountKnobs(app, (name, value) => {
+  $("lcd3").textContent = `${name}: ${value}`;
+  clearTimeout(lcdTimer);
+  lcdTimer = window.setTimeout(() => ($("lcd3").textContent = ""), 1800);
+});
 
 // ---- live input and the on-screen keyboard ----
 const KEYS = "awsedftgyhujk";

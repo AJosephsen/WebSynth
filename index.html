@@ -23,12 +23,15 @@
       .k { position: absolute; top: 0; box-sizing: border-box; border: 1px solid #555; border-radius: 0 0 4px 4px; cursor: pointer; }
       .k.w { height: 100%; background: #f4f4f0; color: #333; display: flex; align-items: flex-end; justify-content: center; font-size: 10px; padding-bottom: 2px; } .k.b { height: 60%; background: #1c1f1d; z-index: 2; }
       .k.w.on { background: var(--accent); } .k.b.on { background: var(--accent); filter: brightness(.8); }
+      .knob { display: inline-block; width: 38px; height: 38px; cursor: ns-resize; touch-action: none; border-radius: 50%; vertical-align: middle; flex: none; } .knob:focus-visible { outline: 2px solid var(--accent); }
+      .knob svg { display: block; } .knob .trk { stroke: var(--line); stroke-width: 3; stroke-linecap: round; } .knob .val { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; } .knob .ptr { stroke: var(--fg); stroke-width: 2; stroke-linecap: round; }
+      .prm:has(.knob) { grid-template-columns: 96px 42px 1fr; } .mix label:has(.knob), .modp-grid label:has(.knob), .modp-live label:has(.knob), .fxp label:has(.knob) { align-items: center; text-align: center; }
       h1, h2, h3 { margin: 12px 0 6px; } section { margin-bottom: 24px; }
       button, select, input { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
       button { cursor: pointer; } button:disabled { opacity: .5; cursor: default; }
       button.sel, .pbtn.sel, .chip.sel { outline: 2px solid var(--accent); } button.off { opacity: .6; }
       .seq-bar, .seq-tracks { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
-      .trk { display: flex; gap: 6px; align-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 6px; } .trk.sel { border-color: var(--accent); }
+      .trk { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 6px; } .trk.sel { border-color: var(--accent); }
       .chip.now { background: var(--accent); color: var(--bg); }
       .roll-wrap { overflow-x: auto; }
       .rl { display: grid; grid-template-columns: 52px repeat(var(--cols), minmax(22px, 1fr)); gap: 1px; min-width: calc(52px + var(--cols) * 24px); }
@@ -45,7 +48,7 @@
       .optabs { display: flex; flex-wrap: wrap; gap: 6px; } .optab { display: flex; flex-direction: column; align-items: flex-start; } .optab small { opacity: .7; font-size: 11px; } .optab.sel { outline: 2px solid var(--accent); }
       svg.algo { width: 100%; max-width: 260px; color: var(--fg); } svg.algo circle { fill: var(--panel); stroke: currentColor; stroke-width: 1.5; } svg.algo .car circle { fill: var(--accent); } svg.algo .car text { fill: var(--bg); } svg.algo text { fill: currentColor; font-size: 12px; } svg.algo .sel circle { stroke-width: 3; } svg.algo g { cursor: pointer; }
       svg.env { width: 100%; max-width: 260px; height: 70px; color: var(--accent); background: var(--cell); border-radius: 4px; }
-      .modp { width: 100%; font-size: 11px; margin-top: 4px; } .modp summary { cursor: pointer; opacity: .8; } .modp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px 8px; margin: 6px 0; } .modp-grid label, .modp-live label { display: flex; flex-direction: column; } .modp-slots .slot { display: flex; gap: 6px; align-items: center; margin: 3px 0; flex-wrap: wrap; } .modp-slots .slot > span:first-child { min-width: 44px; } .modp-live { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 6px; } .modp .hint { opacity: .6; margin: 6px 0; }
+      .modp { flex: 1 1 100%; width: 100%; font-size: 11px; margin-top: 4px; } .modp summary { cursor: pointer; opacity: .8; } .modp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 4px 8px; margin: 6px 0; } .modp-grid label, .modp-live label { display: flex; flex-direction: column; } .modp-slots .slot { display: flex; gap: 6px; align-items: center; margin: 3px 0; flex-wrap: wrap; } .modp-slots .slot > span:first-child { min-width: 44px; } .modp-live { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 6px; } .modp .hint { opacity: .6; margin: 6px 0; }
       .mix { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 11px; width: 100%; } .mix label { display: flex; flex-direction: column; min-width: 64px; } .mix input { padding: 0; }
       .fxp { margin: 8px 0; } .fxp summary { cursor: pointer; font-weight: 600; } .fxp label { display: flex; flex-direction: column; font-size: 12px; min-width: 90px; }
     </style>
