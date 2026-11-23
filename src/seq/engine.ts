@@ -70,6 +70,8 @@ export class Engine {
   private fifoPos = CTL;
   // block scratch
   private tbuf: Float32Array[] = [];
+  private sidebuf: Float32Array[] = [];
+  private sideI = new Int32Array(CTL);
   private ibuf = new Int32Array(CTL);
   private sendC = new Int32Array(CTL);
   private sendD = new Int32Array(CTL);
@@ -196,8 +198,8 @@ export class Engine {
   /** Renders the synths of one CTL block into per-source float buffers (tracks, then the live keyboard). */
   private renderSources(): void {
     const sources = this.tracks.length + 1;
-    while (this.tbuf.length < sources) this.tbuf.push(new Float32Array(CTL));
-    for (let i = 0; i < sources; i++) this.tbuf[i].fill(0);
+    while (this.tbuf.length < sources) { this.tbuf.push(new Float32Array(CTL)); this.sidebuf.push(new Float32Array(CTL)); }
+    for (let i = 0; i < sources; i++) { this.tbuf[i].fill(0); this.sidebuf[i].fill(0); }
     const live = this.tbuf[this.tracks.length];
     let pos = 0;
     while (pos < CTL) {
@@ -207,8 +209,8 @@ export class Engine {
       for (const p of this.pending) n = Math.min(n, p.frames);
       for (const p of this.late) n = Math.min(n, p.frames);
       n = Math.max(1, n);
-      this.live.render(live, pos, n);
-      this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], pos, n));
+      this.live.render(live, pos, n, this.sidebuf[this.tracks.length]);
+      this.tracks.forEach((t, i) => t.synth.render(this.tbuf[i], pos, n, this.sidebuf[i]));
       pos += n;
       if (this.playing) this.framesToStep -= n;
       for (const p of this.pending) p.frames -= n;
@@ -222,6 +224,7 @@ export class Engine {
 
   /** One source into the dry mix and the sends (fx.c mix_part). */
   private mixSource(src: Float32Array, index: number, base: MixSetup, synth?: Synth): void {
+    if (synth?.spreadActive) { this.mixSpread(src, this.sidebuf[index], index, base, synth); return; }
     let m = base;
     const mm = synth?.mixMod;
     if (mm && (mm.pan !== base.pan || mm.dist !== base.dist || mm.chorus !== base.chorus || mm.delay !== base.delay || mm.reverb !== base.reverb)) {
@@ -249,6 +252,38 @@ export class Engine {
       if (r) this.sendR[i] += mulq15(xs, r);
       this.mixL[i] += Math.imul(x, gl) >> 12;
       this.mixR[i] += Math.imul(x, gr) >> 12;
+    }
+    if (pf.thr) pf.throwSend(m.level, m.reverb, m.delay, b, this.sendD, this.sendR, CTL);
+  }
+
+  /** SPREAD (fx.c mix_spread): the voices start left and right of PAN in turn, at PAN -/+ SPRD / 2. b is every voice (mono), d left minus right. */
+  private mixSpread(src: Float32Array, side: Float32Array, index: number, base: MixSetup, synth: Synth): void {
+    let m = base;
+    const mm = synth.mixMod;
+    if (mm) m = { ...base, pan: mm.pan, dist: mm.dist, chorus: mm.chorus, delay: mm.delay, reverb: mm.reverb };
+    const b = this.ibuf, d = this.sideI;
+    for (let i = 0; i < CTL; i++) { b[i] = Math.round(src[i] * 32768); d[i] = Math.round(side[i] * 32768); }
+    (this.dists[index] ??= new Dist()).process(m.dist, b, CTL);
+    const ins = (this.inserts[index] ??= new Insert());
+    if (m.itype || ins.running) ins.process(m, b, CTL);
+    const pf = this.perform;
+    if (index < 4 && (pf.muteMask >> index) & 1) pf.muteSd(index, b, d, CTL);
+    const lvl = LEVEL_Q12[m.level & 127], pan = m.pan, s = ((synth.spreadAmount ?? 0) + 1) >> 1;
+    const pa = clamp(pan - s, -64, 63), pb = clamp(pan + s, -64, 63);
+    const gla = 4096 - (pa > 0 ? pa * 64 : 0), gra = 4096 + (pa < 0 ? pa * 64 : 0);
+    const glb = 4096 - (pb > 0 ? pb * 64 : 0), grb = 4096 + (pb < 0 ? pb * 64 : 0);
+    const glm = (gla + glb) >> 1, grm = (gra + grb) >> 1, gld = (gla - glb) >> 1, grd = (gra - grb) >> 1;
+    const c = m.chorus * 258, dl = m.delay * 258, r = m.reverb * 258;
+    const mx = Math.max(c, dl, r);
+    const xmax = Math.floor(0x7fffffff / (mx | 1));
+    for (let i = 0; i < CTL; i++) {
+      const x = Math.imul(b[i] >> 2, lvl) >> 10, y = Math.imul(d[i] >> 2, lvl) >> 10;
+      const xs = clamp(x, -xmax, xmax);
+      if (c) this.sendC[i] += mulq15(xs, c);
+      if (dl) this.sendD[i] += mulq15(xs, dl);
+      if (r) this.sendR[i] += mulq15(xs, r);
+      this.mixL[i] += (Math.imul(x, glm) >> 12) + (Math.imul(y, gld) >> 12);
+      this.mixR[i] += (Math.imul(x, grm) >> 12) + (Math.imul(y, grd) >> 12);
     }
     if (pf.thr) pf.throwSend(m.level, m.reverb, m.delay, b, this.sendD, this.sendR, CTL);
   }

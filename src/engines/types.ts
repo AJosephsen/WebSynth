@@ -10,7 +10,8 @@ export const P_PAN = 12, P_DIST = 13, P_CHOR = 14, P_DLY = 15, P_REV = 16,
   P_LRATE = 17, P_LWAVE = 18, P_LPHASE = 19, P_LFADE = 20, P_LD_PIT = 21, P_LD_FLT = 22, P_LD_SHP = 23, P_LD_AMP = 24,
   P_ED_FLT = 25, P_ED_PIT = 26, P_ED_SHP = 27, P_LSYNC = 28, P_LTRIG = 29, P_LPOL = 30,
   P_M1SRC = 31, // 4 slots of SRC, DST, AMT: P_M1SRC .. P_M1SRC + 11
-  P_ATDST = 43, P_ATAMT = 44, P_COUNT = 45;
+  P_ATDST = 43, P_ATAMT = 44,
+  P_MUTE = 45, P_VOICE = 46, P_GLIDE = 47, P_GLMODE = 48, P_PRIO = 49, P_ALLOC = 50, P_DETUNE = 51, P_SPRD = 52, P_COUNT = 53;
 
 /** Parameter display kinds (felucca_engine.h F_*). */
 export const enum F { INT, PCT, BIPCT, TIME, LFOHZ, CUTOFF, DB, SEMI, ENUM, BPM, NOTE, ONOFF, OCT, STEPS }
@@ -34,6 +35,7 @@ export class EngVoice {
   s = new Int32Array(8);
   age = 0;
   mvel = 0; mrnd = 0; // the note's VEL and RAND for the matrix
+  side = 0; gstep = 0; // SPREAD side; glide step (TIME mode)
 }
 
 /** Per-block modulation of a voice. */

@@ -3,7 +3,7 @@ import { engineById } from "../engines/registry";
 import { P_E0, Track } from "../engines/types";
 import { LibraryEntry } from "../instruments";
 import { cloneMod, ModSetup } from "../mod/setup";
-import { Instrument } from "../synth/synth";
+import { Instrument, VoiceParams } from "../synth/synth";
 import { applyModInput, modPanelHtml } from "./modpanel";
 
 type Editable = Extract<Instrument, { kind: "engine" | "drum" }>;
@@ -21,9 +21,11 @@ const ENV_LABELS = ["Attack", "Decay", "Sustain", "Release"];
 const FTYPES = ["Low-pass", "Band-pass", "High-pass"];
 const DRUM_LABELS = ["Kit", "Tune", "Tone", "Decay", "Snap", "Accent", "Kick", "Drive"];
 const DRUM_KITS = [0, 4, 5, 6, 7, 8, 9, 10, 11]; // the kits a user can pick (1..3 are retired aliases)
+const VOICE_MODES = ["Poly", "Mono", "Legato", "Unison"];
+const defaultVp = (mono: boolean): VoiceParams => ({ voice: mono ? 1 : 0, glide: 0, glmode: 0, prio: 0, alloc: 0, detune: 40, spread: 0 });
 const FX_LABELS = ["Dist", "Chorus", "Delay", "Reverb"];
 
-const copy = (i: Editable): Editable => (i.kind === "engine" ? { ...i, params: [...i.params], env: [...i.env], fx: i.fx && [...i.fx] } : { ...i, params: [...i.params], fx: i.fx && [...i.fx] });
+const copy = (i: Editable): Editable => (i.kind === "engine" ? { ...i, params: [...i.params], env: [...i.env], fx: i.fx && [...i.fx], vp: i.vp && { ...i.vp } } : { ...i, params: [...i.params], fx: i.fx && [...i.fx] });
 
 const knob = (label: string, attr: string, lo: number, hi: number, v: number, shown: string | number = v): string =>
   `<label class="kc"><span>${label}</span><input type="range" ${attr} min="${lo}" max="${hi}" value="${v}"><output>${shown}</output></label>`;
@@ -67,13 +69,18 @@ export function mountEngineEditor(root: HTMLElement, deps: EngineEditorDeps) {
     }
     let env = i.env.map((v, n) => knob(ENV_LABELS[n], `data-e="${n}"`, 0, 127, v)).join("");
     env += knob("Env &gt; filter", "data-fenv", -64, 63, i.fenv);
-    env += `<label class="kc"><span>Mono</span><input type="checkbox" data-mono${i.mono ? " checked" : ""}></label>`;
     if (i.engine === "ANALOG") {
       env += `<label class="kc"><span>Filter</span><select data-ftype>${FTYPES.map((f, n) => `<option value="${n}"${(i.ftype ?? 0) === n ? " selected" : ""}>${f}</option>`).join("")}</select></label>`;
     }
+    const vp = i.vp ?? defaultVp(i.mono);
+    const sel = (label: string, key: keyof VoiceParams, names: string[]) =>
+      `<label class="kc"><span>${label}</span><select data-vp="${key}">${names.map((n, k) => `<option value="${k}"${vp[key] === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>`;
+    const voice = sel("Mode", "voice", VOICE_MODES) + knob("Glide", 'data-vp="glide"', 0, 127, vp.glide) + sel("Glide", "glmode", ["Rate", "Time"]) +
+      sel("Priority", "prio", ["Last", "Low", "High"]) + sel("Alloc", "alloc", ["Rotate", "Reuse"]) + knob("Detune", 'data-vp="detune"', 0, 127, vp.detune) +
+      knob("Spread", 'data-vp="spread"', 0, 127, vp.spread);
     const labels = entry.def.edit.map((d) => d.label);
     root.innerHTML = head(i.engine, entry.def.pageTitle.join(" / ")) +
-      `<div class="panel">${module(entry.def.pageTitle.join(" / "), sound, "wide")}${module("Envelope", env)}${fxModule(i)}` +
+      `<div class="panel">${module(entry.def.pageTitle.join(" / "), sound, "wide")}${module("Envelope", env)}${module("Voice", voice)}${fxModule(i)}` +
       `<section class="module full"><h4>LFO &middot; Modulation <small>(live keyboard)</small></h4><div class="modp-body">${modPanelHtml(deps.getMod(), labels)}</div></section></div>`;
   }
 
@@ -119,7 +126,11 @@ export function mountEngineEditor(root: HTMLElement, deps: EngineEditorDeps) {
     const v = Number(el.value);
     if (el.dataset.p !== undefined) { inst.params[Number(el.dataset.p)] = v; scheduleRelabel(); }
     else if (el.dataset.fx !== undefined) (inst.fx ??= [0, 0, 0, 25])[Number(el.dataset.fx)] = v;
-    else if (inst.kind === "engine" && el.dataset.e !== undefined) inst.env[Number(el.dataset.e)] = v;
+    else if (inst.kind === "engine" && el.dataset.vp !== undefined) {
+      inst.vp ??= defaultVp(inst.mono);
+      (inst.vp as unknown as Record<string, number>)[el.dataset.vp] = v;
+      inst.mono = inst.vp.voice === 1;
+    } else if (inst.kind === "engine" && el.dataset.e !== undefined) inst.env[Number(el.dataset.e)] = v;
     else if (inst.kind === "engine" && el.hasAttribute("data-fenv")) inst.fenv = v;
     else if (inst.kind === "engine" && el.hasAttribute("data-mono")) inst.mono = el.checked;
     else if (inst.kind === "engine" && el.hasAttribute("data-ftype")) inst.ftype = v;

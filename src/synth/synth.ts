@@ -13,7 +13,11 @@ export interface Synth {
   noteOff(note: number): void;
   allOff(): void;
   /** Adds `n` samples to out starting at `start`. */
-  render(out: Float32Array, start: number, n: number): void;
+  render(out: Float32Array, start: number, n: number, side?: Float32Array): void;
+  /** SPREAD is on: the voices are split left / right and render() also fills `side` (left minus right). */
+  readonly spreadActive?: boolean;
+  /** SPRD, 0..127. */
+  readonly spreadAmount?: number;
   /** The LFO and modulation matrix (engine instruments only). */
   setMod?(m: ModSetup | undefined): void;
   /** The track's mix values the matrix modulates from (pan, dist and the sends). */
@@ -27,11 +31,22 @@ export interface Synth {
   stepDelay?(note: number, vel: number, period: number): number;
 }
 
+/** The voice-mode settings of an engine part (Felucca's VOICE pages). */
+export interface VoiceParams {
+  voice: number; // 0 POLY, 1 MONO, 2 LEGATO, 3 UNISON
+  glide: number; // 0..127
+  glmode: number; // 0 RATE, 1 TIME
+  prio: number; // 0 LAST, 1 LOW, 2 HIGH
+  alloc: number; // 0 ROTATE, 1 REUSE
+  detune: number; // 0..127
+  spread: number; // 0..127
+}
+
 /** A playable sound, as it travels between the page and the worklet. */
 export type Instrument =
   | { kind: "fm6"; patch: Uint8Array }
   | { kind: "drum"; params: number[]; fx?: number[] }
-  | { kind: "engine"; engine: string; params: number[]; env: number[]; fenv: number; mono: boolean; ftype?: number; fx?: number[] };
+  | { kind: "engine"; engine: string; params: number[]; env: number[]; fenv: number; mono: boolean; ftype?: number; fx?: number[]; vp?: VoiceParams };
 
 export function instrumentFromPreset(engine: string, p: Preset): Instrument {
   return { kind: "engine", engine, params: [...p.e], env: [...p.env], fenv: p.fenv, mono: !!p.mono, fx: [...p.fx] };
@@ -42,5 +57,5 @@ export function makeSynth(inst: Instrument, voices = 8): Synth {
   if (inst.kind === "drum") return new DrumSynth(inst.params);
   const e = engineById(inst.engine);
   if (!e) throw new Error(`unknown engine ${inst.engine}`);
-  return new EnginePoly(e.def, inst, inst.mono ? 1 : voices);
+  return new EnginePoly(e.def, inst, voices);
 }

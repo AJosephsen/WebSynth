@@ -4,10 +4,11 @@ import { clamp, mulq15, mulq16, pitchInc } from "../engines/dsp";
 import {
   CTL, EngineDef, EngVoice, P_ATAMT, P_ATDST, P_ATK, P_CHOR, P_DIST, P_DLY, P_E0, P_ED_FLT, P_ED_PIT, P_ED_SHP, P_FTYPE,
   P_LD_AMP, P_LD_FLT, P_LD_PIT, P_LD_SHP, P_LFADE, P_LPHASE, P_LPOL, P_LRATE, P_LSYNC, P_LTRIG, P_LWAVE, P_M1SRC, P_PAN, P_REL,
-  P_REV, Track, Vmod,
+  P_REV, P_ALLOC, P_DETUNE, P_GLIDE, P_GLMODE, P_PRIO, P_SPRD, P_VOICE, Track, Vmod,
 } from "../engines/types";
 import { ENV_EXP, ENV_LIN } from "../engines/felucca-tables";
-import { lfoNoteOn, lfoTick, Modulator } from "../mod/mod";
+import { lfoTick, Modulator } from "../mod/mod";
+import { VoiceLayer } from "./voicelayer";
 import { ModSetup } from "../mod/setup";
 import type { Instrument, Synth } from "./synth";
 
@@ -19,8 +20,11 @@ export class EnginePoly implements Synth {
   private voices: EngVoice[];
   private env = [0, 70, 100, 40]; // ATK DEC SUS REL
   private fenv = 0;
-  private clock = 0;
+  private layer: VoiceLayer;
   private buf = new Int32Array(CTL);
+  private sbuf = new Int32Array(CTL); // SPREAD: the left voices
+  spreadActive = false;
+  get spreadAmount(): number { return this.track.p[P_SPRD]; }
   private pos = CTL;
   private last: Int32Array;
   private mod: Modulator;
@@ -34,6 +38,7 @@ export class EnginePoly implements Synth {
     this.last = new Int32Array(n);
     this.track.edit = def.edit;
     this.mod = new Modulator(this.track);
+    this.layer = new VoiceLayer(this.track, this.voices, def, (note, vel) => this.mod.note(note, clamp(vel, 1, 127)));
     this.setInstrument(inst);
   }
 
@@ -46,6 +51,14 @@ export class EnginePoly implements Synth {
     p[P_FTYPE] = inst.ftype ?? 0;
     this.fenv = inst.fenv;
     p[P_ED_FLT] = inst.fenv;
+    const vp = inst.vp;
+    p[P_VOICE] = vp?.voice ?? (inst.mono ? 1 : 0);
+    p[P_GLIDE] = vp?.glide ?? 0;
+    p[P_GLMODE] = vp?.glmode ?? 0;
+    p[P_PRIO] = vp?.prio ?? 0;
+    p[P_ALLOC] = vp?.alloc ?? 0;
+    p[P_DETUNE] = vp?.detune ?? 40;
+    p[P_SPRD] = vp?.spread ?? 0;
   }
 
   setBpm(bpm: number): void { this.bpm = bpm; }
@@ -76,52 +89,14 @@ export class EnginePoly implements Synth {
     return this.voices.filter((v) => v.active).length;
   }
 
-  noteOn(note: number, velocity = 100): void {
-    let v = this.voices.find((x) => x.active && x.note === note && x.gate);
-    v ??= this.voices.find((x) => !x.active);
-    v ??= this.voices.filter((x) => !x.gate).sort((a, b) => a.age - b.age)[0];
-    v ??= [...this.voices].sort((a, b) => a.age - b.age)[0];
-    const sounding = !!v.active && v.stage !== 0;
-    const ph = Uint32Array.from(v.ph);
-    const s = Int32Array.from(v.s);
-    velocity = this.mod.note(note, clamp(velocity, 1, 127));
-    v.note = note;
-    v.vel = clamp(velocity, 1, 127);
-    v.mvel = v.vel;
-    v.mrnd = this.track.mRnd;
-    this.track.mVi = this.voices.indexOf(v);
-    lfoNoteOn(this.track);
-    v.gate = 1;
-    v.active = 1;
-    v.stage = 1;
-    v.age = ++this.clock;
-    v.pitch16 = v.pitchCur = note * 16;
-    v.fine = 0;
-    if (!sounding) v.env = v.envOut = 0;
-    this.def.noteOn(this.track, v);
-    if (sounding) {
-      v.ph.set(ph);
-      for (let k = 0; k < 8; k++) if (k !== 2 && k !== 3 && (this.def.keep >> k) & 1) v.s[k] = s[k];
-    }
-  }
+  noteOn(note: number, velocity = 100): void { this.layer.noteOn(note, velocity); }
 
-  noteOff(note: number): void {
-    for (const v of this.voices) {
-      if (v.active && v.gate && v.note === note) {
-        v.gate = 0;
-        if (v.stage !== 0) v.stage = 3;
-      }
-    }
-  }
+  noteOff(note: number): void { this.layer.noteOff(note); }
 
-  allOff(): void {
-    for (const v of this.voices) {
-      if (v.active && v.gate) {
-        v.gate = 0;
-        v.stage = 3;
-      }
-    }
-  }
+  /** The next legato note glides (a step's slide). */
+  set slide(on: boolean) { this.layer.slideGlide = on ? 1 : 0; }
+
+  allOff(): void { this.layer.allOff(); }
 
   private envTick(v: EngVoice): number {
     const sus = this.env[2] << 17;
@@ -149,6 +124,8 @@ export class EnginePoly implements Synth {
     const p = t.p;
     const mod = this.mod;
     this.buf.fill(0);
+    this.spreadActive = p[P_SPRD] > 0 && (p[P_VOICE] === 0 || p[P_VOICE] === 3);
+    if (this.spreadActive) this.sbuf.fill(0);
     const on = mod.begin();
     this.mixMod.pan = p[P_PAN]; this.mixMod.dist = p[P_DIST]; this.mixMod.chorus = p[P_CHOR];
     this.mixMod.delay = p[P_DLY]; this.mixMod.reverb = p[P_REV];
@@ -168,30 +145,41 @@ export class EnginePoly implements Synth {
       this.last[k] = amp1;
       v.envOut = amp1;
       if (!env && !amp0 && v.stage === 2 && !e.sampled) continue;
+      if (v.pitchCur !== v.pitch16) { // glide
+        const d = v.pitch16 - v.pitchCur;
+        let st = v.gstep ? v.gstep : ENV_LIN[(p[P_GLIDE] ? p[P_GLIDE] : 40) & 127] >> 14;
+        if (st < 1) st = 1;
+        v.pitchCur += d > 0 ? (d < st ? d : st) : -d < st ? d : -st;
+      }
       const pitch16 = clamp(v.pitchCur + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((env * p[P_ED_PIT] * 3) >> 15), 0, 2047);
-      const inc = pitchInc(pitch16);
+      let inc = pitchInc(pitch16);
+      if (v.fine) inc = (inc + Math.imul(inc >>> 12, v.fine)) >>> 0;
       let cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((env * p[P_ED_FLT]) >> 7);
       if (v.vel > 110) cutoff += (env * 24) >> 7;
       const shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((env * p[P_ED_SHP]) >> 7);
-      const m: Vmod = { pitch16, inc, fine: 0, amp0, amp1, envq15: env, cutoff, shape };
+      const m: Vmod = { pitch16, inc, fine: v.fine, amp0, amp1, envq15: env, cutoff, shape };
       if (on) {
-        mod.voice(v, m, 0);
+        mod.voice(v, m, v.fine);
         this.last[k] = v.envOut;
       }
-      e.render(t, v, this.buf, CTL, m);
+      e.render(t, v, this.spreadActive && v.side === 0 ? this.sbuf : this.buf, CTL, m);
     }
+    if (this.spreadActive) for (let i = 0; i < CTL; i++) this.buf[i] += this.sbuf[i]; // buf: every voice; sbuf: the left ones
     if (on) mod.end();
   }
 
-  render(out: Float32Array, start: number, n: number): void {
+  render(out: Float32Array, start: number, n: number, side?: Float32Array): void {
     if (this.activeVoices === 0 && this.pos >= CTL) return;
+    const k = (0.6 * this.gain) / 32768;
     for (let i = 0; i < n; i++) {
       if (this.pos >= CTL) {
         if (this.activeVoices === 0) return;
         this.block();
         this.pos = 0;
       }
-      out[start + i] += (this.buf[this.pos++] / 32768) * 0.6 * this.gain;
+      out[start + i] += this.buf[this.pos] * k;
+      if (side && this.spreadActive) side[start + i] += (2 * this.sbuf[this.pos] - this.buf[this.pos]) * k;
+      this.pos++;
     }
   }
 }

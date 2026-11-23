@@ -251,6 +251,18 @@ export class Perform {
     this.mg[t] = g;
   }
 
+  /** mute() with SPREAD's side signal: the same ramp on both. */
+  muteSd(t: number, b: Int32Array, d: Int32Array, n: number): void {
+    let g = this.mg[t];
+    const target = (this.act >>> (PF_M1 + t)) & 1 ? 0 : 32768;
+    for (let i = 0; i < n; i++) {
+      g += clamp(target - g, -SL_SLOPE, SL_SLOPE);
+      b[i] = mulq16(b[i], (g << 1) >>> 0);
+      d[i] = mulq16(d[i], (g << 1) >>> 0);
+    }
+    this.mg[t] = g;
+  }
+
   /** Before the buses: THROW (KNOB 3) adds the dry mix to the delay and reverb sends. */
   pre(ml: Int32Array, mr: Int32Array, sd: Int32Array, sr: Int32Array, n: number): void {
     const m = this.k[2] * 327;

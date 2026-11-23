@@ -1,6 +1,8 @@
 // The matrix inside the synth and the sequencer: modulation changes the sound, stays finite, routes to the mix, TIME delays a step.
 import { factoryInstrument } from "../src/instruments";
-import { createEngine } from "../src/seq/engine";
+import { createEngine, Engine } from "../src/seq/engine";
+import { engineById } from "../src/engines/registry";
+import { makeSynth, Instrument } from "../src/synth/synth";
 import { defaultSongFx, emptyPattern, sanitizeSong, Song } from "../src/seq/song";
 import { defaultMod, ModSetup } from "../src/mod/setup";
 import { MD_CUT, MD_PAN, MD_PITCH, MD_TIME, MS_LFO, MS_RAND, MS_MODW, MD_DEPTH } from "../src/mod/mod";
@@ -77,6 +79,37 @@ void m5; void lr;
   check(rev.every(Number.isFinite) && diff(plain, rev) > 1, "REV THROW adds reverb send");
   check(diff(plain, echo) > 1, "ECHO THROW adds delay send");
   check(peak(muted.subarray(1000)) < peak(plain) * 0.02, "a mute key silences its track");
+}
+// voice modes: UNISON stacks voices, MONO / LEGATO keep one, GLIDE moves the pitch, SPREAD opens the stereo image
+{
+  const base = factoryInstrument("ANALOG/SAW LEAD") as Extract<Instrument, { kind: "engine" }>;
+  const vp = (o: object): Instrument => ({ ...base, vp: { voice: 0, glide: 0, glmode: 0, prio: 0, alloc: 0, detune: 40, spread: 0, ...o } });
+  const run = (inst: Instrument, notes: number[][], blocks = 150): { l: Float32Array; r: Float32Array; syn: ReturnType<typeof makeSynth> } => {
+    const syn = makeSynth(inst, 8);
+    const song0 = song();
+    const e = new Engine(44100, makeSynth(factoryInstrument("INIT"), 2), song0);
+    e.addTrack(syn);
+    const l = new Float32Array(blocks * 32), r = new Float32Array(blocks * 32);
+    const half = Math.floor(l.length / 2);
+    for (const n of notes[0]) syn.noteOn(n, 100);
+    e.renderStereo(l.subarray(0, half), r.subarray(0, half));
+    for (const n of notes[1] ?? []) syn.noteOn(n, 100);
+    e.renderStereo(l.subarray(half), r.subarray(half));
+    return { l, r, syn };
+  };
+  void engineById;
+  const poly = run(vp({}), [[60]]);
+  const uni = run(vp({ voice: 3 }), [[60]]);
+  check(poly.syn.activeVoices === 1 && uni.syn.activeVoices === 8, `UNISON sounds 8 voices (got ${uni.syn.activeVoices})`);
+  check(diff(poly.l, uni.l) > 1, "UNISON changes the sound");
+  const mono = run(vp({ voice: 1 }), [[60], [64, 67]]);
+  check(mono.syn.activeVoices === 1, "MONO keeps one voice");
+  const g0 = run(vp({ voice: 2 }), [[60], [72]]), g1 = run(vp({ voice: 2, glide: 60 }), [[60], [72]]);
+  check(g1.l.every(Number.isFinite) && diff(g0.l, g1.l) > 1, "GLIDE moves the pitch between notes");
+  const sp0 = run(vp({}), [[60, 64, 67]]), sp1 = run(vp({ spread: 127 }), [[60, 64, 67]]);
+  let lr0 = 0, lr1 = 0;
+  for (let i = 0; i < sp0.l.length; i++) { lr0 += Math.abs(sp0.l[i] - sp0.r[i]); lr1 += Math.abs(sp1.l[i] - sp1.r[i]); }
+  check(lr0 < 1e-3 && lr1 > 1, `SPREAD opens the stereo image (L-R ${lr0.toFixed(3)} -> ${lr1.toFixed(2)})`);
 }
 if (fails) process.exit(1);
 console.log("OK modulation in the synth and sequencer");
