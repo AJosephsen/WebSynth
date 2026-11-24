@@ -37,6 +37,7 @@ type Msg =
   | { type: "learn"; track: number; param: number }
   | { type: "learnMap"; map: { cc: number; track: number; param: number }[] }
   | { type: "sectionInstruments"; map: Record<string, Instrument> }
+  | { type: "rec"; track: number }
   | { type: "play" }
   | { type: "stop" };
 
@@ -47,6 +48,7 @@ class SynthProcessor extends AudioWorkletProcessor {
     super();
     this.engine.onTempo = (bpm) => this.port.postMessage({ type: "tempo", bpm });
     this.engine.liveInput.onChord = (c) => { if (c.notes.length > 1 || c.chrd === 11) this.port.postMessage({ type: "chord", ...c }); };
+    this.engine.onRecord = (track, pattern, step, data) => this.port.postMessage({ type: "rec", track, pattern, step, data });
     this.engine.onSongEnd = () => this.port.postMessage({ type: "stopped" });
     this.engine.onLearned = (cc, track, param) => this.port.postMessage({ type: "learned", cc, track, param });
     this.engine.onStep = (pattern, step, arrPos) => this.port.postMessage({ type: "pos", pattern, step, arrPos });
@@ -58,6 +60,7 @@ class SynthProcessor extends AudioWorkletProcessor {
         case "noteOn": en.liveInput.noteOn(m.note, m.vel ?? 100); break;
         case "noteOff": en.liveInput.noteOff(m.note); break;
         case "liveInput": en.liveInput.set(m.settings); break;
+        case "rec": en.recTrack = m.track; break;
         case "sectionInstruments": en.sectionInstruments = m.map; break;
         case "instrument": en.setInstrument(-1, m.instrument); break;
         case "trackInstrument": en.setInstrument(m.track, m.instrument); break;

@@ -1,4 +1,5 @@
 import { LibraryEntry } from "../instruments";
+import { copyTrack, lengthRange, transposeRange, velocityRange } from "../seq/notetools";
 import { Instrument } from "../synth/synth";
 import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
 import { INSERT_NAMES, insertLabels } from "../fx/insert";
@@ -14,7 +15,7 @@ import { MParam, motionParams as paramList } from "../seq/params";
 import { P_PAN } from "../engines/types";
 import { applyModInput, modPanelHtml } from "./modpanel";
 import {
-  LANE_DEFAULT, LANE_SILENT, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, sectionSeconds, Song, Step, TRACKS,
+  LANE_DEFAULT, LANE_SILENT, Pattern, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, sectionSeconds, Song, Step, TRACKS,
 } from "../seq/song";
 
 const KEY = "websynth.song.v1";
@@ -73,6 +74,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     <section class="module transport"><h4>Transport</h4>
       <div class="tp">
         <button id="sq-play" class="playbtn" disabled>Play</button>
+        <button id="sq-rec" title="Record the live keyboard and MIDI notes into the selected track while the song plays">Rec</button><button id="sq-undo" title="Restore the patterns as they were when Rec was armed" disabled>Undo take</button>
         <label class="kc"><span>Mode</span><select id="sq-mode"><option value="song">Song</option><option value="pattern">Pattern loop</option></select></label>
         <label class="kc"><span>Tempo</span><input id="sq-bpm" type="range" min="40" max="240"><output id="sq-bpmo"></output></label>
         <label class="kc"><span>Clock</span><select id="sq-clock"><option value="0">Internal</option><option value="1">MIDI in</option></select><output id="sq-ext"></output></label>
@@ -101,6 +103,12 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         <button id="sq-oct-d">Octave −</button><button id="sq-oct-u">Octave +</button>
       </div>
       <div class="roll-wrap"><div id="sq-roll" class="roll"></div></div>
+      <div class="seq-bar" id="sq-tools"><span>Edit steps</span>
+        <label>from <select id="sq-from"></select></label><label>to <select id="sq-to"></select></label>
+        <button data-tool="pitch" data-d="-12">Pitch −12</button><button data-tool="pitch" data-d="-1">−1</button><button data-tool="pitch" data-d="1">+1</button><button data-tool="pitch" data-d="12">+12</button>
+        <button data-tool="vel" data-d="-10">Velocity −</button><button data-tool="vel" data-d="10">+</button>
+        <button data-tool="len" data-d="-0.5">Length −</button><button data-tool="len" data-d="0.5">+</button>
+        <label>Copy track to <select id="sq-copyto"></select></label><button id="sq-copy">Copy</button></div>
       <div class="seq-bar" id="sq-motion"></div>
     </section>
     <section class="module"><h4>Pattern sequencer</h4>
@@ -191,6 +199,15 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       ${sl("rsize", "Size", 0, 127)}${sl("rdamp", "Damp", 0, 127)}${sl("crate", "Chorus rate", 0, 127)}${sl("cdepth", "Chorus depth", 0, 127)}`;
   }
 
+  /** The step range and copy target of the edit tools follow the pattern's length and the track. */
+  function renderTools(): void {
+    const len = cur().length, o = (v: number, sel: number) => `<option value="${v}"${v === sel ? " selected" : ""}>${v + 1}</option>`;
+    const from = Math.min(Number($<HTMLSelectElement>("sq-from").value || 0), len - 1), to = Math.min(Number($<HTMLSelectElement>("sq-to").value || len - 1), len - 1);
+    $("sq-from").innerHTML = Array.from({ length: len }, (_, k) => o(k, from)).join("");
+    $("sq-to").innerHTML = Array.from({ length: len }, (_, k) => o(k, Math.max(from, to))).join("");
+    $("sq-copyto").innerHTML = Array.from({ length: TRACKS }, (_, k) => (k === track ? "" : `<option value="${k}">Track ${k + 1}</option>`)).join("");
+  }
+
   function renderPatterns(): void {
     $("sq-patbar").innerHTML =
       song.patterns.map((p, i) => `<button data-p="${i}" class="pbtn${i === pat ? " sel" : ""}">${i + 1}. ${p.name}</button>`).join("");
@@ -204,6 +221,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     $<HTMLInputElement>("sq-loop").checked = song.loop !== false;
     ($<HTMLInputElement>("sq-swing")).value = String(Math.round(song.swing * 100));
     $("sq-swingo").textContent = `${Math.round(song.swing * 100)}%`;
+    renderTools();
   }
 
   const DRUM_LANES: Record<number, string> = { 36: "KICK", 37: "RIM", 38: "SNARE", 39: "CLAP", 42: "HAT CL", 45: "TOM", 46: "HAT OP", 56: "BELL" };
@@ -318,6 +336,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     renderFx();
     renderTracks();
     renderPatterns();
+    renderTools();
     renderRoll();
     renderArr();
   }
@@ -398,7 +417,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const trk = el.closest<HTMLElement>(".trk");
     if (trk && el.dataset.act) {
       const i = Number(trk.dataset.t);
-      if (el.dataset.act === "sel") { track = i; renderTracks(); renderPatterns(); renderRoll(); }
+      if (el.dataset.act === "sel") { track = i; renderTracks(); renderPatterns(); renderRoll(); if (recording) sendRec(); }
       if (el.dataset.act === "mute") { song.tracks[i].mute = !song.tracks[i].mute; commit(); renderTracks(); }
       return;
     }
@@ -573,6 +592,35 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   $("sq-oct-d").onclick = () => { base = Math.max(12, base - 12); renderRoll(); };
   $("sq-oct-u").onclick = () => { base = Math.min(96, base + 12); renderRoll(); };
   $<HTMLInputElement>("sq-loop").onchange = (e) => { if ((e.target as HTMLInputElement).checked) delete song.loop; else song.loop = false; commit(); };
+  // REC: notes played while the song runs are written into the selected track's pattern (the worklet sends each step back)
+  let recording = false, takeSnap: Pattern[] | null = null;
+  const sendRec = (): void => deps.send({ type: "rec", track: recording ? track : -1 });
+  $("sq-rec").onclick = () => {
+    recording = !recording;
+    if (recording) { takeSnap = JSON.parse(JSON.stringify(song.patterns)); ($("sq-undo") as HTMLButtonElement).disabled = false; }
+    $("sq-rec").classList.toggle("sel", recording);
+    sendRec();
+  };
+  $("sq-undo").onclick = () => {
+    if (!takeSnap) return;
+    song.patterns = JSON.parse(JSON.stringify(takeSnap));
+    commit(); renderAll();
+  };
+  $("sq-tools").addEventListener("click", (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLElement>("button");
+    if (!b) return;
+    const from = Number($<HTMLSelectElement>("sq-from").value), to = Number($<HTMLSelectElement>("sq-to").value);
+    if (b.dataset.tool) {
+      const d = Number(b.dataset.d), p = cur();
+      if (b.dataset.tool === "pitch") transposeRange(p, track, from, to, d);
+      else if (b.dataset.tool === "vel") velocityRange(p, track, from, to, d);
+      else lengthRange(p, track, from, to, d);
+    } else if (b.id === "sq-copy") {
+      const dst = Number($<HTMLSelectElement>("sq-copyto").value);
+      if (!Number.isNaN(dst)) copyTrack(cur(), track, dst);
+    } else return;
+    commit(); renderRoll();
+  });
   $("sq-arr-add").onclick = () => {
     if (song.arrangement.length >= MAX_ARRANGEMENT) return;
     ensureSections();
@@ -643,6 +691,10 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         $("sq-ext").textContent = `${(m as unknown as { bpm: number }).bpm} BPM`;
       } else if (m.type === "tpos") {
         if (m.track === track) { playPattern = m.pattern ?? 0; playStep = m.step ?? 0; playArr = m.arrPos ?? 0; markPlayhead(); }
+      } else if (m.type === "rec") {
+        const r = m as unknown as { track: number; pattern: number; step: number; data: Step };
+        const p = song.patterns[r.pattern];
+        if (p) { p.steps[r.track][r.step] = r.data; try { localStorage.setItem(KEY, JSON.stringify(song)); } catch { /* storage unavailable */ } if (r.pattern === pat && r.track === track) renderRoll(); }
       } else if (m.type === "stopped") {
         playing = false; playStep = -1;
         $("sq-play").textContent = "Play";

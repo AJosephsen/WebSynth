@@ -29,6 +29,8 @@ export class NoteInput {
   private readonly pending = new Set<number>();
   private quarter = 22050;
   /** The chord last played (its name is built from this by the page). */
+  /** A tone starts (on) or ends: the sequencer's recorder listens. */
+  onTone?: (note: number, vel: number, on: boolean) => void;
   onChord?: (c: { notes: number[]; root: number; mask: number; chrd: number }) => void;
 
   private readonly ctx: InputContext;
@@ -98,6 +100,7 @@ export class NoteInput {
     ht.held[x >> 5] |= 1 << (x & 31);
     if (this.arp.p.mode) this.arp.add(x);
     else this.synth().noteOn(x, h.vel);
+    this.onTone?.(x, h.vel, true);
   }
 
   private release(h: Held): void {
@@ -107,6 +110,7 @@ export class NoteInput {
       ht.held[x >> 5] &= ~(1 << (x & 31));
       this.arp.remove(x);
       this.synth().noteOff(x);
+      this.onTone?.(x, 0, false);
     }
     h.started = 0;
     h.strum.total = 0;

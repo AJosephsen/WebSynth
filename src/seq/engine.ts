@@ -6,6 +6,7 @@ import { Perform } from "../fx/perform";
 import { Slicer, SlicerSetting } from "../fx/slicer";
 import { defaultInput, NoteInput } from "../synth/noteinput";
 import { Harmony, newHarmonyTrack } from "../synth/harmony";
+import { divSamples } from "../synth/arp";
 import { motionParams } from "./params";
 import { engineById } from "../engines/registry";
 import type { ModSetup } from "../mod/setup";
@@ -88,6 +89,7 @@ export class Engine {
   readonly liveInput = new NoteInput(() => this.live, { harmony: this.harmony, index: TRACKS });
   /** The tracks' note inputs (MIDI channels that play a track go through them). */
   readonly trackInputs: NoteInput[] = Array.from({ length: TRACKS }, (_, i) => new NoteInput(() => this.tracks[i].synth, { harmony: this.harmony, index: i }));
+  private readonly recHook = (() => { this.liveInput.onTone = (n, v, on) => this.recordTone(this.recTrack, n, v, on); this.trackInputs.forEach((inp, i) => { inp.onTone = (n, v, on) => this.recordTone(i, n, v, on); }); return true; })();
   private readonly trackArpGrids = Array.from({ length: TRACKS }, () => new ClockGrid());
   /** MIDI in: 0 every channel plays the live keyboard, 1 channels 1-4 play tracks 1-4. */
   midiRoute = 0;
@@ -177,6 +179,43 @@ export class Engine {
     return t;
   }
 
+  /** REC: the track the live keyboard and MIDI notes are written into while the song plays (-1: off). */
+  recTrack = -1;
+  /** A step was recorded: the page applies the same step to its copy of the song. */
+  onRecord?: (track: number, pattern: number, step: number, data: Step) => void;
+  private recClock = 0;
+  private readonly recHeld = new Map<number, { pattern: number; step: number; at: number }>();
+  private recordTone(track: number, note: number, vel: number, on: boolean): void {
+    if (this.recTrack !== track) return;
+    const seq = this.seqs[track], pat = this.lanePattern(track);
+    if (!pat || !this.playing) { this.recHeld.delete(note); return; }
+    const pi = this.song.patterns.indexOf(pat), steps = pat.steps[track];
+    const period = Math.max(1, divSamples(seq.p.div, this.quarter()));
+    if (on) {
+      const len = Math.max(1, seq.p.len);
+      let step = seq.pos === 0x7fffffff ? 0 : seq.idx;
+      if (seq.pos !== 0x7fffffff && seq.pos > period / 2) step = (step + 1) % len; // the nearest step: a note late in a step belongs to the next
+      const old = steps[step];
+      const notes = old ? [...new Set([...old.notes, note])].slice(0, 8) : [note];
+      const data: Step = { ...(old ?? {}), notes, vel: Math.max(vel, old?.vel ?? 0) || vel, gate: old?.gate ?? 0.9 };
+      steps[step] = data;
+      seq.steps[step] = toSeqStep(data);
+      this.recHeld.set(note, { pattern: pi, step, at: this.recClock });
+      this.onRecord?.(track, pi, step, data);
+    } else {
+      const h = this.recHeld.get(note);
+      this.recHeld.delete(note);
+      const st = h && this.song.patterns[h.pattern]?.steps[track][h.step];
+      if (!h || !st) return;
+      const n = Math.round((this.recClock - h.at) / period);
+      if (n > 1) {
+        const data: Step = { ...st, gate: Math.min(16, n * 0.95) };
+        this.song.patterns[h.pattern].steps[track][h.step] = data;
+        seq.steps[h.step] = toSeqStep(data);
+        this.onRecord?.(track, h.pattern, h.step, data);
+      }
+    }
+  }
   /** The instruments the sections may name (the page sends them), by id, and the track's own instrument and the section sound now applied. */
   sectionInstruments: Record<string, Instrument> = {};
   private baseInst: (Instrument | undefined)[] = [];
@@ -542,6 +581,7 @@ export class Engine {
     this.fxs.bpm = bpm;
     this.seqs.forEach((q, i) => { const t = this.harmony.tracks[i]; t.seqNotes = q.soundingNotes; t.mute = !!this.song.tracks[i]?.mute; });
     this.harmony.tick(CTL);
+    this.recClock += CTL;
     if (this.clockMode) {
       const an = this.arpGrid.advance(this.units, quarter, this.liveInput.arpRate());
       this.liveInput.tick(an, quarter, this.playing ? an : CTL);
