@@ -8,7 +8,8 @@ import { mountEngineEditor } from "./ui/engineeditor";
 import { mountKnobs } from "./ui/knobs";
 import { PF_NAMES } from "./fx/perform";
 import { ARP_MODES, ARP_RATES } from "./synth/arp";
-import { CHORD_NAMES, SCALE_NAMES, VOICING_NAMES } from "./synth/chord";
+import { chordControls } from "./ui/inputui";
+import { autoChordName, chordName, melodyChordName } from "./synth/harmony";
 import { defaultInput } from "./synth/noteinput";
 import { MParam, motionParams } from "./seq/params";
 import { engineById } from "./engines/registry";
@@ -45,10 +46,7 @@ app.innerHTML = `
           <label class="kc"><span>Prob</span><input type="range" data-in="arp.prob" min="0" max="127" value="127"><output>127</output></label>
           <label class="kc"><span>Hold</span><input type="checkbox" data-in="arp.hold"></label>
           <label class="kc"><span>As played</span><input type="checkbox" data-in="arp.order"></label>
-          <label class="kc"><span>Chord</span><select data-in="chord.chrd">${CHORD_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
-          <label class="kc"><span>Voicing</span><select data-in="chord.voic">${VOICING_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
-          <label class="kc"><span>Key</span><select data-in="chord.root">${["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].map((n, i) => `<option value="${i}">${n}</option>`).join("")}</select></label>
-          <label class="kc"><span>Scale</span><select data-in="chord.scale">${SCALE_NAMES.map((n, i) => `<option value="${i}"${i === 1 ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+          ${chordControls("data-in", defaultInput().chord)}
         </div>
       </section>
       <section class="module"><h4>MIDI <small>(channel routing and controller learn; the clock is on the Sequencer tab)</small></h4>
@@ -299,6 +297,12 @@ $("learn-list").addEventListener("click", (ev) => {
   saveLearn(); node?.port.postMessage({ type: "learnMap", map: learnMap }); fillLearn();
 });
 function onWorkletMessage(m: { type: string; [k: string]: unknown }): boolean {
+  if (m.type === "chord") {
+    const mode = m.chrd as number, root = m.root as number, mask = m.mask as number;
+    const name = mode === 10 ? autoChordName(root, mask) : mode === 11 ? melodyChordName(root, mask) : chordName(root, mask);
+    lcdNote(`${name}  ${(m.notes as number[]).map(noteName).join(" ")}`);
+    return true;
+  }
   if (m.type === "learned") {
     const e = { cc: m.cc as number, track: m.track as number, param: m.param as number };
     learnMap = learnMap.filter((x) => x.cc !== e.cc && !(x.track === e.track && x.param === e.param));

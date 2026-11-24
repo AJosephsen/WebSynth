@@ -8,7 +8,7 @@ import { demoSongs } from "../seq/songs";
 import { ARP_RATES } from "../synth/arp";
 import { SLICER_MODES, SLICER_RATES } from "../fx/slicer";
 import { ARP_MODES } from "../synth/arp";
-import { CHORD_NAMES } from "../synth/chord";
+import { chordControls } from "./inputui";
 import { defaultInput } from "../synth/noteinput";
 import { MParam, motionParams as paramList } from "../seq/params";
 import { P_PAN } from "../engines/types";
@@ -138,7 +138,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       <label class="kc"><span>Quantize</span><input type="checkbox" data-seq="quantize"${(q.quantize ?? 1) ? " checked" : ""}></label></div>
       <div class="mix ins"><label class="kc wideSel"><span>MIDI arp</span><select data-tin="arp.mode">${ARP_MODES.map((n, k) => `<option value="${k}"${(t.input?.arp.mode ?? 0) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
       <label class="kc wideSel"><span>Arp rate</span><select data-tin="arp.rate">${ARP_RATES.map((n, k) => `<option value="${k}"${(t.input?.arp.rate ?? 2) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
-      <label class="kc wideSel"><span>Chord</span><select data-tin="chord.chrd">${CHORD_NAMES.map((n, k) => `<option value="${k}"${(t.input?.chord.chrd ?? 0) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label></div>
+      </div>
+      <div class="mix ins">${chordControls("data-tin", t.input?.chord ?? {}, "wideSel")}</div>
       <div class="mix ins"><label class="kc wideSel"><span>Slicer</span><select data-sl="mode">${SLICER_MODES.map((n, k) => `<option value="${k}"${(t.slicer?.mode ?? 0) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
       <label class="kc wideSel"><span>Pattern</span><select data-sl="pat">${Array.from({ length: 16 }, (_, k) => `<option value="${k + 1}"${(t.slicer?.pat ?? 1) === k + 1 ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>
       <label class="kc wideSel"><span>Step</span><select data-sl="rate">${SLICER_RATES.map((n, k) => `<option value="${k}"${(t.slicer?.rate ?? 1) === k ? " selected" : ""}>${n}</option>`).join("")}</select></label>
