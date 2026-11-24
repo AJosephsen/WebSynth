@@ -44,3 +44,11 @@ src/sampler/user.ts: TypeScript port of Felucca's user sample pipeline (tools/sa
 src/seq/midiclock.ts: TypeScript port of Felucca's external MIDI clock follower (midi_clock.c, adapted there from contributions by ChanceTheMaker and keremimo; GPL-3.0-only). The MIDI channel controls and controller learn follow midi_control.c and midi_learn.c (adapted from a contribution by ChanceTheMaker).
 src/mod/mod.ts: TypeScript port of Felucca's modulation matrix (mod.c) and track LFO (voice.c: waves, SYNC, FADE, S&H, SLEW; GPL-3.0-only).
 tests/ins-gold.txt is reference output of that code.
+
+Melodee (https://github.com/keremimo/melodee, GPL-3.0-only, Copyright (C) 2026 Kerem Kilic (Ellic Studio); a modified Felucca, whose own portions are Copyright (C) 2026 Leo Kuroshita, Hügelton Instruments):
+src/synth/scales.ts: the scale catalogue of scales.h (16 Western and 54 microtonal scales; generated there by tools/gen_scales.py from assets/scales/catalog.json).
+src/synth/keymap.ts: TypeScript port of seq.c's key map (QNT OFF / SNAP / WHITE / ALL / MPC, ROOT, TRN) and microtonal.h (scale degrees as notes, pitch tables, microtonal SNAP). tests/keymap-gold.txt is reference output of that code (tests/keymap-harness.c).
+src/synth/harmony.ts: TypeScript port of chord.c, chord_auto.c and chord_melody.c (chord keys with microtonal scales, AUTO and AUTO2 harmony, STRUM and STROKE). tests/harmony-gold.txt is reference output of that code (tests/harmony-harness.c).
+src/synth/voicelayer.ts, src/synth/enginesynth.ts: microtonal pitch of a voice follows voice.c (voice_scale_pitch).
+src/seq/song.ts, src/seq/engine.ts, src/ui/sequencer.ts: the 64-section song, LOOP SONG, a section's own sound per track, live recording into a track and the range edit tools follow the behaviour described in Melodee's 1.5 / 1.6 release notes; they are written for this project.
+Parts of Melodee that carry other licences (the SLOOP punch DSP by isod89, reSID, the MAME uPD933 model, the Casio CZ-1 and Sequential Prophet-5 factory data) are listed in its LICENSING.md; nothing of the last two is included here.
