@@ -11,7 +11,7 @@ song.patterns[0].steps[0][0] = { notes: [48] };
 song.arrangement = [0, 1];
 song.sections = [{}, { sounds: ["BELL", null, null, null] }];
 song.loop = false;
-check(MAX_ARRANGEMENT === 64, "64 sections");
+check(MAX_ARRANGEMENT >= 64, "at least 64 sections");
 const clean = sanitizeSong(JSON.parse(JSON.stringify(song)))!;
 check(clean.loop === false && clean.sections?.[1].sounds?.[0] === "BELL" && !clean.sections?.[0].sounds, "loop and section sounds survive sanitising");
 const secs = sectionSeconds(clean, (d) => 60 / clean.bpm / [1, 2, 4, 8, 3, 6][d]);

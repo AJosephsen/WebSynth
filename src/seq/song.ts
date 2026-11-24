@@ -99,8 +99,8 @@ export interface Song {
   clockOut?: boolean;
 }
 
-export const MAX_PATTERNS = 16;
-export const MAX_ARRANGEMENT = 64;
+export const MAX_PATTERNS = 128;
+export const MAX_ARRANGEMENT = 128;
 
 export function emptyPattern(name: string, length = 16): Pattern {
   return { name, length, steps: Array.from({ length: ALL_TRACKS }, () => Array<Step>(MAX_STEPS).fill(null)) };
@@ -131,7 +131,7 @@ export function sanitizeSong(raw: unknown): Song | null {
           out.steps[t][j] = {
             notes: st.notes.map((n) => Math.round(clamp(n, 0, 127, 60))).slice(0, 8),
             vel: Math.round(clamp(st.vel, 1, 127, 100)),
-            gate: clamp(st.gate, 0.1, 16, 0.9),
+            gate: clamp(st.gate, 0.1, 64, 0.9),
             ...(st.accent ? { accent: true } : {}),
             ...(st.slide ? { slide: true } : {}),
             ...(st.tie ? { tie: true } : {}),

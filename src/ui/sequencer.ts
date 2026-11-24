@@ -1,5 +1,6 @@
 import { LibraryEntry } from "../instruments";
 import { PUNCH_NAME } from "../fx/punch";
+import { importMidi } from "../seq/midiimport";
 import { copyTrack, lengthRange, transposeRange, velocityRange } from "../seq/notetools";
 import { Instrument } from "../synth/synth";
 import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
@@ -85,6 +86,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         <div class="tpfile">
           <button id="sq-export">Export song</button>
           <label class="file">Import song <input id="sq-import" type="file" accept=".json"></label>
+          <label class="file" title="A Standard MIDI file: drums (channel 10) to the CR78 kit and MIDI track 1, bass, pad and lead to tracks 2-4, the rest to the muted MIDI tracks">Import MIDI <input id="sq-midiimp" type="file" accept=".mid,.midi"></label><span id="sq-impinfo" class="hint"></span>
           <label class="file">Demo songs <select id="sq-demo"><option value="">Load a demo song…</option>${demoSongs.map((d) => `<option value="${d.id}">${d.title} · ${d.genre}</option>`).join("")}</select></label>
           <button id="sq-reset">Reset to default song</button>
         </div>
@@ -718,6 +720,19 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const first = deps.library().find((p) => p.id === song.tracks[0].patch)?.instrument;
     base = first?.kind === "drum" ? 36 : 48;
     commit(true); renderAll();
+  };
+  ($<HTMLInputElement>("sq-midiimp")).onchange = async (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    try {
+      const r = importMidi(new Uint8Array(await f.arrayBuffer()));
+      song = r.song; pat = 0; track = 0; arrSel = -1;
+      const lib = deps.library();
+      for (const t of song.tracks) if (!lib.some((p) => p.id === t.patch)) t.patch = lib[0].id;
+      commit(true); renderAll();
+      $("sq-impinfo").textContent = r.info;
+    } catch (err) { $("sq-impinfo").textContent = `Not imported: ${(err as Error).message}`; }
+    (e.target as HTMLInputElement).value = "";
   };
   $("sq-reset").onclick = () => { song = defaultSong(); pat = 0; track = 0; arrSel = -1; commit(true); renderAll(); };
 
