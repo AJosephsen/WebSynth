@@ -14,7 +14,7 @@ import { MParam, motionParams as paramList } from "../seq/params";
 import { P_PAN } from "../engines/types";
 import { applyModInput, modPanelHtml } from "./modpanel";
 import {
-  LANE_DEFAULT, LANE_SILENT, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, Song, Step, TRACKS,
+  LANE_DEFAULT, LANE_SILENT, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, sectionSeconds, Song, Step, TRACKS,
 } from "../seq/song";
 
 const KEY = "websynth.song.v1";
@@ -77,6 +77,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         <label class="kc"><span>Tempo</span><input id="sq-bpm" type="range" min="40" max="240"><output id="sq-bpmo"></output></label>
         <label class="kc"><span>Clock</span><select id="sq-clock"><option value="0">Internal</option><option value="1">MIDI in</option></select><output id="sq-ext"></output></label>
         <label class="kc"><span>Swing</span><input id="sq-swing" type="range" min="0" max="50"><output id="sq-swingo"></output></label>
+        <label class="kc"><span>Loop song</span><input id="sq-loop" type="checkbox" checked></label>
         <div class="tpfile">
           <button id="sq-export">Export song</button>
           <label class="file">Import song <input id="sq-import" type="file" accept=".json"></label>
@@ -120,6 +121,9 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   }
   function commit(sendPatches = false): void {
     try { localStorage.setItem(KEY, JSON.stringify(song)); } catch { /* storage unavailable */ }
+    const lib = deps.library(), map: Record<string, Instrument> = {};
+    for (const sec of song.sections ?? []) for (const id of sec.sounds ?? []) { const e = id ? lib.find((p) => p.id === id) : undefined; if (id && e) map[id] = e.instrument; }
+    deps.send({ type: "sectionInstruments", map });
     deps.send({ type: "song", song, instruments: sendPatches ? instruments() : undefined });
   }
   const cur = () => song.patterns[pat];
@@ -197,6 +201,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     tl.value = String(Math.min(cur().length, cur().lens?.[track] ?? cur().length));
     ($<HTMLInputElement>("sq-bpm")).value = String(song.bpm);
     $("sq-bpmo").textContent = String(Math.round(song.bpm));
+    $<HTMLInputElement>("sq-loop").checked = song.loop !== false;
     ($<HTMLInputElement>("sq-swing")).value = String(Math.round(song.swing * 100));
     $("sq-swingo").textContent = `${Math.round(song.swing * 100)}%`;
   }
@@ -266,11 +271,15 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   }
 
   function renderArr(): void {
+    const DEN = [1, 2, 4, 8, 3, 6, 0.5, 0.25, 0.125, 0.0625];
+    const secs = sectionSeconds(song, (d) => 60 / song.bpm / (DEN[d] ?? 4));
+    let at = 0;
+    const when = secs.map((x) => { const t = at; at += x; return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`; });
     $("sq-arr").innerHTML = song.arrangement
       .map((p, i) => {
         const sec = song.sections?.[i];
         const mark = `${sec?.repeat && sec.repeat > 1 ? ` ×${sec.repeat}` : ""}${sec?.lanes?.some((l) => l !== LANE_DEFAULT) ? " ◈" : ""}`;
-        return `<button data-a="${i}" class="chip${i === arrSel ? " sel" : ""}${playing && mode === "song" && i === playArr ? " now" : ""}">${i + 1}: ${song.patterns[p]?.name ?? "?"}${mark}</button>`;
+        return `<button data-a="${i}" class="chip${i === arrSel ? " sel" : ""}${playing && mode === "song" && i === playArr ? " now" : ""}">${i + 1}: ${song.patterns[p]?.name ?? "?"}${mark}<small class="when"> ${when[i]}</small></button>`;
       })
       .join("");
     renderSection();
@@ -290,7 +299,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const lanes = sec.lanes ?? Array(TRACKS).fill(LANE_DEFAULT);
     const opts = (v: number) => `<option value="${LANE_DEFAULT}"${v === LANE_DEFAULT ? " selected" : ""}>section's own</option><option value="${LANE_SILENT}"${v === LANE_SILENT ? " selected" : ""}>silent</option>${song.patterns.map((p, i) => `<option value="${i}"${v === i ? " selected" : ""}>${i + 1}. ${p.name}</option>`).join("")}`;
     el.innerHTML = `<label>Repeat <select data-sec="repeat">${Array.from({ length: 16 }, (_, k) => `<option${(sec.repeat ?? 1) === k + 1 ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>` +
-      Array.from({ length: TRACKS }, (_, t) => `<label>Track ${t + 1} <select data-sec="lane${t}">${opts(lanes[t])}</select></label>`).join("");
+      Array.from({ length: TRACKS }, (_, t) => `<label>Track ${t + 1} <select data-sec="lane${t}">${opts(lanes[t])}</select></label>`).join("") +
+      `<div class="seq-bar">` + Array.from({ length: TRACKS }, (_, t) => `<label>Sound ${t + 1} <select data-sec="sound${t}"><option value="">track's own</option>${deps.library().map((e) => `<option value="${e.id}"${sec.sounds?.[t] === e.id ? " selected" : ""}>${e.id}</option>`).join("")}</select></label>`).join("") + `</div>`;
   }
 
   function markPlayhead(): void {
@@ -468,7 +478,12 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       const sec = ensureSections()[arrSel];
       const v = Number((el as HTMLSelectElement).value);
       if (el.dataset.sec === "repeat") { if (v > 1) sec.repeat = v; else delete sec.repeat; }
-      else {
+      else if (el.dataset.sec.startsWith("sound")) {
+        const t = Number(el.dataset.sec.slice(5)), id = (el as HTMLSelectElement).value;
+        sec.sounds ??= Array(TRACKS).fill(null);
+        sec.sounds[t] = id || null;
+        if (sec.sounds.every((x) => !x)) delete sec.sounds;
+      } else {
         const t = Number(el.dataset.sec.slice(4));
         sec.lanes ??= Array(TRACKS).fill(LANE_DEFAULT);
         sec.lanes[t] = v;
@@ -557,6 +572,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   };
   $("sq-oct-d").onclick = () => { base = Math.max(12, base - 12); renderRoll(); };
   $("sq-oct-u").onclick = () => { base = Math.min(96, base + 12); renderRoll(); };
+  $<HTMLInputElement>("sq-loop").onchange = (e) => { if ((e.target as HTMLInputElement).checked) delete song.loop; else song.loop = false; commit(); };
   $("sq-arr-add").onclick = () => {
     if (song.arrangement.length >= MAX_ARRANGEMENT) return;
     ensureSections();

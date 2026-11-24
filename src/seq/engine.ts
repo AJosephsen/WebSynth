@@ -49,6 +49,8 @@ export class Engine {
   arrPos = 0;
   /** Called when track 1 enters a step (pattern index, step, arrangement position). */
   onStep?: (pattern: number, step: number, arrPos: number) => void;
+  /** LOOP SONG is off and the last section has played. */
+  onSongEnd?: () => void;
   /** Called when any track enters a step. */
   onTrackStep?: (track: number, pattern: number, step: number, arrPos: number) => void;
   /** One step sequencer per track (polymeter, ties, slides, ratchets, nudge, chances). */
@@ -175,8 +177,26 @@ export class Engine {
     return t;
   }
 
+  /** The instruments the sections may name (the page sends them), by id, and the track's own instrument and the section sound now applied. */
+  sectionInstruments: Record<string, Instrument> = {};
+  private baseInst: (Instrument | undefined)[] = [];
+  private appliedSound: (string | null)[] = Array(TRACKS).fill(null);
+  /** A section's own sound for a track (Melodee's "Set preset"): the track plays it from the section's start and its own again after. */
+  private applySectionSounds(): void {
+    const sec = this.mode === "song" ? this.song.sections?.[this.arrPos] : undefined;
+    for (let t = 0; t < TRACKS; t++) {
+      const want = sec?.sounds?.[t] ?? null;
+      if (want === this.appliedSound[t]) continue;
+      const inst = want ? this.sectionInstruments[want] : this.baseInst[t];
+      if (!inst) continue;
+      this.appliedSound[t] = want;
+      this.setInstrument(t, inst, true);
+    }
+  }
+
   /** Swaps the synth of a track (or the live synth, track -1) for a new instrument. */
-  setInstrument(track: number, inst: Instrument): void {
+  setInstrument(track: number, inst: Instrument, fromSection = false): void {
+    if (track >= 0 && !fromSection) { this.baseInst[track] = inst; this.appliedSound[track] = null; }
     const old = track < 0 ? this.live : this.tracks[track]?.synth;
     if (!old) return;
     old.allOff();
@@ -195,6 +215,7 @@ export class Engine {
     this.patternIndex = Math.min(this.patternIndex, song.patterns.length - 1);
     this.arrPos = Math.min(this.arrPos, song.arrangement.length - 1);
     this.tracks.forEach((t, i) => (t.mute = !!song.tracks[i]?.mute));
+    this.applySectionSounds();
     this.applyPattern(false, 0);
   }
 
@@ -374,6 +395,7 @@ export class Engine {
     this.arpGrid.remainder = 0;
     this.patGrid.remainder = 0;
     if (this.clockMode) this.clock.transport(0xfa, Math.floor(this.nowMs));
+    this.applySectionSounds();
     this.applyPattern(false, 0);
     for (const s of this.seqs) s.start();
     for (const m of this.motions) m.begin();
@@ -415,7 +437,11 @@ export class Engine {
     if (len > 0 && this.patPos >= len) {
       const carry = this.patPos - len;
       this.patPos = carry;
-      if (this.mode === "song") this.arrPos = (this.arrPos + 1) % this.song.arrangement.length;
+      if (this.mode === "song") {
+        if (this.arrPos + 1 >= this.song.arrangement.length && this.song.loop === false) { this.stop(); this.onSongEnd?.(); return; }
+        this.arrPos = (this.arrPos + 1) % this.song.arrangement.length;
+        this.applySectionSounds();
+      }
       this.applyPattern(true, carry);
     }
     this.seqs.forEach((s, i) => s.tick(this.clockMode ? this.seqGrids[i].advance(units, quarter, s.p.div) : CTL, quarter));

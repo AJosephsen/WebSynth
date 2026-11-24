@@ -66,6 +66,8 @@ export interface Section {
   repeat?: number;
   /** Per track: a pattern index, -1 the section's own pattern, -2 silent. */
   lanes?: number[];
+  /** Per track: an instrument id the section plays instead of the track's own sound (null: the track's own). */
+  sounds?: (string | null)[];
 }
 export const LANE_DEFAULT = -1, LANE_SILENT = -2;
 
@@ -78,10 +80,12 @@ export interface Song {
   arrangement: number[]; // pattern indices, played in order (the pattern sequencer)
   /** Repeats and per-track lanes of the sections (parallel to the arrangement). */
   sections?: Section[];
+  /** LOOP SONG: after the last section the song starts again (default); false: it stops. */
+  loop?: boolean;
 }
 
 export const MAX_PATTERNS = 16;
-export const MAX_ARRANGEMENT = 32;
+export const MAX_ARRANGEMENT = 64;
 
 export function emptyPattern(name: string, length = 16): Pattern {
   return { name, length, steps: Array.from({ length: TRACKS }, () => Array<Step>(MAX_STEPS).fill(null)) };
@@ -176,9 +180,10 @@ export function sanitizeSong(raw: unknown): Song | null {
     const r = rawSections[i];
     const repeat = Math.round(clamp(r?.repeat, 1, 16, 1));
     const lanes = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(r?.lanes?.[t], -2, patterns.length - 1, -1)));
-    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}) };
+    const sounds = Array.from({ length: TRACKS }, (_, t) => (typeof r?.sounds?.[t] === "string" ? r.sounds[t]!.slice(0, 64) : null));
+    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}), ...(sounds.some((x) => x) ? { sounds } : {}) };
   });
-  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes) ? { sections } : {}) };
+  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes || x.sounds) ? { sections } : {}), ...(s.loop === false ? { loop: false } : {}) };
 }
 
 /** The song the app starts with. */
@@ -218,4 +223,17 @@ export function defaultSong(): Song {
     patterns: [groove, turn, breakdown, emptyPattern("D empty")],
     arrangement: [2, 0, 0, 1, 0],
   };
+}
+
+/** The seconds each section lasts (its repeats of the clock track's pattern), for the song's time ruler. */
+export function sectionSeconds(song: Song, divSeconds: (div: number) => number): number[] {
+  return song.arrangement.map((pi, i) => {
+    const sec = song.sections?.[i];
+    let clock = 0;
+    for (let t = 0; t < TRACKS; t++) if ((sec?.lanes?.[t] ?? LANE_DEFAULT) !== LANE_SILENT) { clock = t; break; }
+    const lane = sec?.lanes?.[clock] ?? LANE_DEFAULT;
+    const pat = song.patterns[lane >= 0 ? lane : pi] ?? song.patterns[0];
+    const steps = pat.lens?.[clock] ?? pat.length;
+    return steps * divSeconds(song.tracks[clock]?.seq?.div ?? 2) * (sec?.repeat ?? 1);
+  });
 }
