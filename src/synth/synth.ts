@@ -19,6 +19,8 @@ export interface Synth {
   readonly voiceMode?: number;
   /** The part's keys are a kit (no chords). */
   readonly keyKit?: boolean;
+  /** The part's scale for microtonal pitch (engine instruments; null: 12-tone). */
+  setScale?(km: import("./keymap").KeyMapParams | null): void;
   readonly spreadActive?: boolean;
   /** SPRD, 0..127. */
   readonly spreadAmount?: number;

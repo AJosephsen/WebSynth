@@ -30,7 +30,7 @@ export class EngVoice {
   note = 0; vel = 0; gate = 0; active = 0; stage = 0;
   env = 0; envOut = 0;
   pitch16 = 0; pitchCur = 0;
-  fine = 0;
+  fine = 0; scaleFine = 0; // the microtonal scale's pitch below 1/16 semitone
   ph = new Uint32Array(3);
   s = new Int32Array(8);
   age = 0;

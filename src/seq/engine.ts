@@ -5,6 +5,7 @@ import { Insert } from "../fx/insert";
 import { Perform } from "../fx/perform";
 import { Slicer, SlicerSetting } from "../fx/slicer";
 import { defaultInput, NoteInput } from "../synth/noteinput";
+import { Harmony, newHarmonyTrack } from "../synth/harmony";
 import { motionParams } from "./params";
 import { engineById } from "../engines/registry";
 import type { ModSetup } from "../mod/setup";
@@ -80,9 +81,11 @@ export class Engine {
   /** The FX hold layer: throws, mutes (see fx/perform.ts). */
   readonly perform = new Perform();
   /** The live keyboard's input: chord keys and the arpeggiator. */
-  readonly liveInput = new NoteInput(() => this.live);
+  /** What the chord keys' AUTO harmony hears: the four tracks and the live keyboard (the last). */
+  readonly harmony = new Harmony(Array.from({ length: TRACKS + 1 }, newHarmonyTrack), { solo: () => 0, beatSamples: () => this.quarter() });
+  readonly liveInput = new NoteInput(() => this.live, { harmony: this.harmony, index: TRACKS });
   /** The tracks' note inputs (MIDI channels that play a track go through them). */
-  readonly trackInputs: NoteInput[] = Array.from({ length: TRACKS }, (_, i) => new NoteInput(() => this.tracks[i].synth));
+  readonly trackInputs: NoteInput[] = Array.from({ length: TRACKS }, (_, i) => new NoteInput(() => this.tracks[i].synth, { harmony: this.harmony, index: i }));
   private readonly trackArpGrids = Array.from({ length: TRACKS }, () => new ClockGrid());
   /** MIDI in: 0 every channel plays the live keyboard, 1 channels 1-4 play tracks 1-4. */
   midiRoute = 0;
@@ -264,7 +267,7 @@ export class Engine {
     const kit = !!tg.synth.keyKit;
     if (st === 0x90 && d2 > 0) {
       if (c.held.delete(d1)) tg.input.noteOff(d1);
-      tg.input.noteOn(d1, d2);
+      tg.input.noteOn(d1, d2, "midi");
     } else if (st === 0x80 || st === 0x90) {
       if (c.pedal && !kit) c.held.add(d1);
       else tg.input.noteOff(d1);
@@ -511,6 +514,8 @@ export class Engine {
     const quarter = this.quarter();
     const bpm = this.bpm;
     this.fxs.bpm = bpm;
+    this.seqs.forEach((q, i) => { const t = this.harmony.tracks[i]; t.seqNotes = q.soundingNotes; t.mute = !!this.song.tracks[i]?.mute; });
+    this.harmony.tick(CTL);
     if (this.clockMode) {
       const an = this.arpGrid.advance(this.units, quarter, this.liveInput.arpRate());
       this.liveInput.tick(an, quarter, this.playing ? an : CTL);

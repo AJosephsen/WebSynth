@@ -105,9 +105,8 @@ export function scaleMap(p: KeyMapParams, n: number, offset: number): number {
   return clamp(n + offset + p.trans, 0, 127);
 }
 
-/** The note key k of the on-screen keyboard (0..26, from F3) plays. */
-export function keyNote(p: KeyMapParams, k: number): number {
-  let n = 53 + k;
+/** The note a key plays, the key being note `n` of the on-screen keyboard (the octave buttons move `n` themselves; `octave` here is the part's own). */
+export function keyMapNote(p: KeyMapParams, n: number): number {
   if (p.quant === Q_SNAP) {
     if (microActive(p)) {
       const note = microSnap(p, n + p.trans);
@@ -121,6 +120,8 @@ export function keyNote(p: KeyMapParams, k: number): number {
   }
   return scaleMap(p, n, 12 * p.octave);
 }
+/** The note key k of the hardware's keys (0..26, from F3) plays. */
+export const keyNote = (p: KeyMapParams, k: number): number => keyMapNote(p, 53 + k);
 
 /** MPC: a note's pad, E01..H16 as 0..63 (A..D are 64..127). */
 export const mpcPad = (note: number): number => (note + 28) & 127;

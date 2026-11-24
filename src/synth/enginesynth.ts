@@ -44,6 +44,8 @@ export class EnginePoly implements Synth {
   learnParam(id: number, v: number): void { this.held.set(id, v); this.learned.add(id); this.track.p[id] = v; }
   private reapply(): void { for (const [id, v] of this.held) this.track.p[id] = v; }
   get voiceMode(): number { return this.track.p[P_VOICE]; }
+  /** The part's scale for microtonal pitch (null: 12-tone). */
+  setScale(km: import("./keymap").KeyMapParams | null): void { this.layer.scale = km; }
   get spreadAmount(): number { return this.track.p[P_SPRD]; }
   private pos = CTL;
   private last: Int32Array;
@@ -191,7 +193,7 @@ export class EnginePoly implements Synth {
         v.pitchCur += d > 0 ? (d < st ? d : st) : -d < st ? d : -st;
       }
       const envq = e.ownenv ? 0 : env;
-      const fine = v.fine + bendFine;
+      const fine = v.fine + v.scaleFine + bendFine;
       const pitch16 = clamp(v.pitchCur + bend16 + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((envq * p[P_ED_PIT] * 3) >> 15), 0, 2047);
       let inc = pitchInc(pitch16);
       if (fine) inc = (inc + Math.imul(inc >>> 12, fine)) >>> 0;

@@ -1,6 +1,7 @@
 // Voice allocation of one part, a port of Felucca's voice.c (GPL-3.0-only): POLY (rotate or reuse allocation, stealing),
 // MONO / LEGATO / UNISON with LAST / LOW / HIGH priority, glide (RATE or TIME) and the unison detune. See NOTICE.
 // (Felucca shares eight voices among its four parts; here each part has its own, so there is no cross-part stealing.)
+import { KeyMapParams, microActive, scalePitch } from "./keymap";
 import { EngVoice, P_ALLOC, P_DETUNE, P_GLIDE, P_GLMODE, P_LPHASE, P_LTRIG, P_MUTE, P_PRIO, P_VOICE, Track } from "../engines/types";
 
 export const V_POLY = 0, V_MONO = 1, V_LEGATO = 2, V_UNISON = 3;
@@ -23,6 +24,12 @@ export class VoiceLayer {
   monoNote = 0;
   rr = 0;
   slideGlide = 0;
+  /** The part's scale when it is microtonal (QNT on): a note is a degree of it and its pitch comes from the table (voice_scale_pitch). */
+  scale: KeyMapParams | null = null;
+  private noteTarget(note: number): number { return this.scale && microActive(this.scale) ? scalePitch(this.scale, note).pitch16 : note * 16; }
+  private setPitch(v: EngVoice, note: number): void {
+    if (this.scale && microActive(this.scale)) { const s = scalePitch(this.scale, note); v.pitch16 = s.pitch16; v.scaleFine = s.fine; } else { v.pitch16 = note * 16; v.scaleFine = 0; }
+  }
   spAlt = 0;
   private vage = 0;
 
@@ -92,7 +99,7 @@ export class VoiceLayer {
     if (p[P_ALLOC] || p[P_GLIDE]) {
       for (let i = 0; i < np; i++) {
         const v = this.voices[i];
-        let d = v.pitchCur - note * 16;
+        let d = v.pitchCur - this.noteTarget(note);
         if (v.active) continue;
         d = d < 0 ? -d : d;
         if (!v.pitchCur) d = 0x7ffffff0;
@@ -135,7 +142,7 @@ export class VoiceLayer {
     v.active = 1;
     v.stage = 1;
     v.age = ++this.vage;
-    v.pitch16 = note * 16;
+    this.setPitch(v, note);
     v.mvel = this.t.mVel;
     v.mrnd = this.t.mRnd;
     this.t.mVi = this.voices.indexOf(v);
@@ -176,7 +183,7 @@ export class VoiceLayer {
         }
       } else {
         v.note = note;
-        v.pitch16 = note * 16;
+        this.setPitch(v, note);
         v.mvel = this.t.mVel;
         v.mrnd = this.t.mRnd;
         if (vel > v.vel && nv === 1) v.vel = vel;

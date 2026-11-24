@@ -100,6 +100,8 @@ export class TrackSeq {
 
   /** Notes the sequencer holds on. */
   get sounding(): number { return this.n; }
+  /** The notes the step sounds now (the chord keys' AUTO harmony listens to them). */
+  get soundingNotes(): number[] { return this.n ? this.notes.slice(0, this.n) : []; }
 
   private get len(): number { return this.p.len > 0 ? this.p.len : 1; }
   private stepAt(i: number): SeqStep { return this.steps[i] ?? EMPTY; }
