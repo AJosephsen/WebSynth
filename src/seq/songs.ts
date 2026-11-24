@@ -290,6 +290,45 @@ function dub(): Song {
   [i1, i2, v1, v2, m1, m2, d1, d2], [0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7]);
 }
 
+/**
+ * An original piece in a cold, slow style (not a transcription of any song): a CR-78 beat that never hurries, a held minor-key pad, a bass that
+ * barely moves, a three-note motif in a long echo, and a tom roll that opens the last section. MIDI 1 plays the same drum part on channel 10
+ * (the GM drum notes), so a drum machine behind a MIDI interface can play along with, or instead of, the CR78 kit.
+ */
+function coldnight(): Song {
+  const R = ".", rest = Array(16).fill(R).join(" ");
+  const D1 = "h . . . h . . . h . . . h . . .";
+  const D2 = "k . h . h . h . s . h . h . h .";
+  const D3 = "k . h . h . h . s . h . h . h k";
+  const DR = "k . h . r . h . s . h . r . h .";
+  const FILL = ". . . . s . s . a2 . b2 . c3 . d3 .";
+  const FILL2 = "a2:1/120 . a2/110 . b2/110 . b2/105 . c3/100 . c3/100 . d3/95 . d3/90 .";
+  const pad = (c: string) => `${c}:15.5/78 . . . . . . . . . . . . . . .`;
+  const Em = "e3+g3+b3", C = "c3+e3+g3", G = "g3+b3+d4", D = "d3+f#3+a3";
+  const bass = (n: string) => `${n}:7/100 . . . . . . . ${n}:6/84 . . . . . . .`;
+  const motif = (a: string, b: string, c: string) => `${a}:3/84 . . . ${b}:2/76 . . . ${c}:6/80 . . . . . . .`;
+  const intro = pattern("Intro", [[D1, D1], [], [pad(Em), pad(C)], []], [0]);
+  const intro2 = pattern("Intro 2", [[D1, D1], [], [pad(G), pad(D)], []], [0]);
+  const v1 = pattern("Verse 1", [[D2, D2], [bass("e2"), bass("c2")], [pad(Em), pad(C)], [motif("e5", "d5", "b4"), rest]], [0]);
+  const v2 = pattern("Verse 2", [[D2, D3], [bass("g2"), bass("d2")], [pad(G), pad(D)], [rest, motif("g5", "f#5", "d5")]], [0]);
+  const b1 = pattern("Build", [[DR, FILL], [bass("e2"), bass("c2")], [pad(Em), pad(C)], [motif("e5", "d5", "b4"), rest]], [0]);
+  const big1 = pattern("Big 1", [[D3, D2], [bass("e2"), bass("c2")], [pad(Em), pad(C)], [motif("b5", "a5", "e5"), rest]], [0]);
+  const big2 = pattern("Big 2", [[D3, FILL2], [bass("g2"), bass("d2")], [pad(G), pad(D)], [rest, motif("g5", "f#5", "d5")]], [0]);
+  // the drum part again on MIDI 1 (steps row 4), on channel 10
+  const all = [intro, intro2, v1, v2, b1, big1, big2];
+  for (const p of all) p.steps[TRACKS] = p.steps[0].map((st) => (st ? { ...st, notes: [...st.notes] } : null));
+  const s = song(100, 0, [
+    { patch: "DRUM/CR78 KIT", mix: { level: 112, reverb: 30 } },
+    { patch: "ANALOG/SUB BASS", mix: { level: 108 } },
+    { patch: "ANALOG/PWM STR", mix: { level: 92, pan: -10, chorus: 40, reverb: 55 }, mod: { rate: 4, wave: 1, trig: 1, ldFlt: 40 } },
+    { patch: "TINE EP", mix: { level: 100, pan: 14, delay: 100, reverb: 50, chorus: 30 } },
+  ], { dtime: 10, dfdbk: 72, dcolor: 45, dmix: 100, rtype: 2, rsize: 115, rdamp: 50, crate: 20, cdepth: 50 },
+  all, [0, 1, 2, 3, 2, 3, 4, 5, 6, 5, 6]);
+  s.midi = [{ channel: 10, mute: false }, { channel: 2, mute: true }, { channel: 3, mute: true }, { channel: 4, mute: true }];
+  s.clockOut = true;
+  return s;
+}
+
 export interface DemoSong { id: string; title: string; genre: string; build: () => Song }
 
 export const demoSongs: DemoSong[] = [
@@ -298,5 +337,6 @@ export const demoSongs: DemoSong[] = [
   { id: "basement", title: "Basement Tape", genre: "90s hip hop · 90 BPM, swung", build: basement },
   { id: "cathedral", title: "Glass Cathedral", genre: "Ambient landscape: clouds, bells in a huge echo, choir · 68 BPM", build: cathedral },
   { id: "dub", title: "Dub Chamber", genre: "Slow dub: one-drop beat, organ skank in a long echo · 76 BPM", build: dub },
+  { id: "coldnight", title: "Cold Night", genre: "Slow, cold CR-78 groove with a MIDI drum track on channel 10 · 100 BPM", build: coldnight },
   { id: "velvet", title: "Velvet Rhodes", genre: "Slow groove, Rhodes riff with drums and bass · 78 BPM", build: velvet },
 ];
