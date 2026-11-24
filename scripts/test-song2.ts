@@ -32,4 +32,18 @@ for (let i = 0; i < Math.ceil((seconds + 1) * 44100 / 1024) && !ended; i++) {
 }
 check(sawBell, "section 2 plays its own sound on track 1");
 check(ended && !e.playing, "LOOP SONG off: the song stops after the last section");
+// timed punches: effect 8 (LOW PASS) on steps 2..3 of the first section
+{
+  const sg = JSON.parse(JSON.stringify(clean));
+  sg.sections[0].punches = [{ fx: 8, step: 2, len: 2 }];
+  sg.loop = true;
+  const e2 = createEngine(44100, sanitizeSong(sg)!, factoryInstrument, 4);
+  e2.mode = "song";
+  e2.play();
+  const period = Math.floor(22050 / 4 * (120 / sg.bpm) * 1); // one 1/16 step at the song's tempo
+  void period;
+  const seen = new Set<number>();
+  for (let i = 0; i < 400; i++) { e2.renderStereo(l, r); seen.add(e2.punchLayer.songReq); }
+  check(seen.has(8) && seen.has(-1), `a section's timed punch is requested only on its steps (${[...seen].join(",")})`);
+}
 process.exit(fails ? 1 : 0);

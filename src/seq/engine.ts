@@ -236,6 +236,19 @@ export class Engine {
   sectionInstruments: Record<string, Instrument> = {};
   private baseInst: (Instrument | undefined)[] = [];
   private appliedSound: (string | null)[] = Array(TRACKS).fill(null);
+  private songPunch = -1;
+  /** The section's timed punches: the effect whose steps hold the position of the section clock (a step of the clock track's division). */
+  private applySectionPunch(): void {
+    let want = -1;
+    const sec = this.mode === "song" && this.playing ? this.song.sections?.[this.arrPos] : undefined;
+    if (sec?.punches?.length) {
+      const period = Math.max(1, divSamples(this.seqs[this.clockTrack()].p.div, this.quarter()));
+      const step = Math.floor(this.patPos / period);
+      const p = sec.punches.find((x) => step >= x.step && step < x.step + x.len);
+      if (p) want = p.fx;
+    }
+    if (want !== this.songPunch) { this.songPunch = want; this.punchSong(want); }
+  }
   /** A section's own sound for a track (Melodee's "Set preset"): the track plays it from the section's start and its own again after. */
   private applySectionSounds(): void {
     const sec = this.mode === "song" ? this.song.sections?.[this.arrPos] : undefined;
@@ -504,6 +517,7 @@ export class Engine {
       }
       this.applyPattern(true, carry);
     }
+    this.applySectionPunch();
     this.seqs.forEach((s, i) => s.tick(this.clockMode ? this.seqGrids[i].advance(units, quarter, s.p.div) : CTL, quarter));
   }
 

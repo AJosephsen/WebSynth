@@ -68,6 +68,8 @@ export interface Section {
   lanes?: number[];
   /** Per track: an instrument id the section plays instead of the track's own sound (null: the track's own). */
   sounds?: (string | null)[];
+  /** Up to four timed master punches (Melodee's song punch FX): effect 0..26, the step of the section's clock track it starts on and its length in steps. */
+  punches?: { fx: number; step: number; len: number }[];
 }
 export const LANE_DEFAULT = -1, LANE_SILENT = -2;
 
@@ -181,9 +183,10 @@ export function sanitizeSong(raw: unknown): Song | null {
     const repeat = Math.round(clamp(r?.repeat, 1, 16, 1));
     const lanes = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(r?.lanes?.[t], -2, patterns.length - 1, -1)));
     const sounds = Array.from({ length: TRACKS }, (_, t) => (typeof r?.sounds?.[t] === "string" ? r.sounds[t]!.slice(0, 64) : null));
-    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}), ...(sounds.some((x) => x) ? { sounds } : {}) };
+    const punches = (Array.isArray(r?.punches) ? r.punches : []).slice(0, 4).map((p) => ({ fx: Math.round(clamp(p?.fx, 0, 26, 0)), step: Math.round(clamp(p?.step, 0, 511, 0)), len: Math.round(clamp(p?.len, 1, 512, 4)) }));
+    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}), ...(sounds.some((x) => x) ? { sounds } : {}), ...(punches.length ? { punches } : {}) };
   });
-  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes || x.sounds) ? { sections } : {}), ...(s.loop === false ? { loop: false } : {}) };
+  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes || x.sounds || x.punches) ? { sections } : {}), ...(s.loop === false ? { loop: false } : {}) };
 }
 
 /** The song the app starts with. */

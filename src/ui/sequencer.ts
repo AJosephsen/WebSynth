@@ -1,4 +1,5 @@
 import { LibraryEntry } from "../instruments";
+import { PUNCH_NAME } from "../fx/punch";
 import { copyTrack, lengthRange, transposeRange, velocityRange } from "../seq/notetools";
 import { Instrument } from "../synth/synth";
 import { DTIME_NAMES, RTYPE_NAMES } from "../fx/fx";
@@ -318,7 +319,8 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const opts = (v: number) => `<option value="${LANE_DEFAULT}"${v === LANE_DEFAULT ? " selected" : ""}>section's own</option><option value="${LANE_SILENT}"${v === LANE_SILENT ? " selected" : ""}>silent</option>${song.patterns.map((p, i) => `<option value="${i}"${v === i ? " selected" : ""}>${i + 1}. ${p.name}</option>`).join("")}`;
     el.innerHTML = `<label>Repeat <select data-sec="repeat">${Array.from({ length: 16 }, (_, k) => `<option${(sec.repeat ?? 1) === k + 1 ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>` +
       Array.from({ length: TRACKS }, (_, t) => `<label>Track ${t + 1} <select data-sec="lane${t}">${opts(lanes[t])}</select></label>`).join("") +
-      `<div class="seq-bar">` + Array.from({ length: TRACKS }, (_, t) => `<label>Sound ${t + 1} <select data-sec="sound${t}"><option value="">track's own</option>${deps.library().map((e) => `<option value="${e.id}"${sec.sounds?.[t] === e.id ? " selected" : ""}>${e.id}</option>`).join("")}</select></label>`).join("") + `</div>`;
+      `<div class="seq-bar">` + Array.from({ length: TRACKS }, (_, t) => `<label>Sound ${t + 1} <select data-sec="sound${t}"><option value="">track's own</option>${deps.library().map((e) => `<option value="${e.id}"${sec.sounds?.[t] === e.id ? " selected" : ""}>${e.id}</option>`).join("")}</select></label>`).join("") + `</div>` +
+      `<div class="seq-bar">Punch FX ` + Array.from({ length: 4 }, (_, k) => { const p = sec.punches?.[k]; return `<label><select data-sec="pfx${k}"><option value="-1">none</option>${PUNCH_NAME.map((n, i) => `<option value="${i}"${p?.fx === i ? " selected" : ""}>${n}</option>`).join("")}</select> at <input data-sec="pst${k}" type="number" min="0" max="511" value="${p?.step ?? 0}" style="width:3.5em"> for <input data-sec="pln${k}" type="number" min="1" max="512" value="${p?.len ?? 4}" style="width:3.5em"></label>`; }).join("") + `</div>`;
   }
 
   function markPlayhead(): void {
@@ -497,7 +499,13 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       const sec = ensureSections()[arrSel];
       const v = Number((el as HTMLSelectElement).value);
       if (el.dataset.sec === "repeat") { if (v > 1) sec.repeat = v; else delete sec.repeat; }
-      else if (el.dataset.sec.startsWith("sound")) {
+      else if (/^p(fx|st|ln)\d$/.test(el.dataset.sec)) {
+        const k = Number(el.dataset.sec[3]), kind = el.dataset.sec.slice(1, 3);
+        const list = (sec.punches ??= []);
+        if (kind === "fx") { if (v < 0) list.splice(k, 1); else if (list[k]) list[k].fx = v; else list.push({ fx: v, step: 0, len: 4 }); }
+        else if (list[k]) { if (kind === "st") list[k].step = Math.max(0, v); else list[k].len = Math.max(1, v); }
+        if (!list.length) delete sec.punches;
+      } else if (el.dataset.sec.startsWith("sound")) {
         const t = Number(el.dataset.sec.slice(5)), id = (el as HTMLSelectElement).value;
         sec.sounds ??= Array(TRACKS).fill(null);
         sec.sounds[t] = id || null;
