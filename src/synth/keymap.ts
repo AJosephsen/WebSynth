@@ -17,6 +17,8 @@ export interface KeyMapParams {
   octave: number;
   /** The part is a drum engine: microtonal scales do not apply. */
   drum?: boolean;
+  /** The drum kit's MPC pad map (QNT MPC: a pad plays its sound, whatever the scale and octave). */
+  drumMpc?: (pad: number) => number;
 }
 export const defaultKeyMap = (): KeyMapParams => ({ scale: 1, root: 0, quant: Q_OFF, trans: 0, mpcdeg: 1, octave: 0 });
 
@@ -130,6 +132,7 @@ export const mpcPad = (note: number): number => (note + 28) & 127;
 export function midiNote(p: KeyMapParams, note: number, track = 0): number {
   const pad = mpcPad(note);
   if (p.quant === Q_MPC && Math.floor(pad / 16) !== track) return KB_SILENT;
+  if (p.quant === Q_MPC && p.drumMpc) return p.drumMpc(pad & 15);
   if (p.quant === Q_MPC) return scaleDegreeMap(p, (pad & 15) - 1 + mpcDegree(p) - 1, 12 * p.octave, true);
   if (p.quant === Q_WHITE || p.quant === Q_ALL) return scaleMap(p, note, 0);
   if (microActive(p) && p.quant === Q_SNAP) return microSnap(p, note + p.trans);

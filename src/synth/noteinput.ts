@@ -4,7 +4,7 @@
 import { Arp, ArpParams, defaultArp } from "./arp";
 import { ClockGrid, clockPeriod, clockScale } from "../seq/midiclock";
 import { CH_OFF, Harmony, HarmonyTrack, Strum, newHarmonyTrack, newStrum } from "./harmony";
-import { KB_SILENT, KeyMapParams, keyMapNote, midiNote } from "./keymap";
+import { KB_SILENT, KeyMapParams, Q_MPC, keyMapNote, midiNote } from "./keymap";
 import type { Synth } from "./synth";
 
 export interface ChordSetting {
@@ -55,7 +55,7 @@ export class NoteInput {
   private keyMap(): KeyMapParams {
     const s = this.synth(), c = this.settings.chord;
     const micro = typeof s.setScale === "function";
-    return { scale: micro || c.scale < 16 ? c.scale : 1, root: c.root, quant: c.quant ?? 0, trans: c.trans ?? 0, mpcdeg: c.mpcdeg ?? 1, octave: 0, drum: !!s.keyKit };
+    return { scale: micro || c.scale < 16 ? c.scale : 1, root: c.root, quant: c.quant ?? 0, trans: c.trans ?? 0, mpcdeg: c.mpcdeg ?? 1, octave: 0, drum: !!s.keyKit, drumMpc: s.mpcNote?.bind(s) };
   }
   /** Copies the settings and the synth's state into the harmony's view of this part. */
   private sync(): void {
@@ -77,6 +77,7 @@ export class NoteInput {
     const km = this.keyMap();
     let mapped = note;
     if (!s.keyKit) mapped = source === "midi" ? midiNote(km, note, this.ctx.index) : keyMapNote(km, note);
+    else if (source === "midi" && km.quant === Q_MPC && km.drumMpc) mapped = midiNote(km, note, this.ctx.index); // a kit's pads play their sounds
     if (mapped === KB_SILENT) return;
     const h = this.ctx.harmony, idx = this.ctx.index;
     const prev = this.chords.get(note);
