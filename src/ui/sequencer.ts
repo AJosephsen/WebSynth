@@ -16,7 +16,7 @@ import { MParam, motionParams as paramList } from "../seq/params";
 import { P_PAN } from "../engines/types";
 import { applyModInput, modPanelHtml } from "./modpanel";
 import {
-  LANE_DEFAULT, LANE_SILENT, Pattern, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, sectionSeconds, Song, Step, TRACKS,
+  LANE_DEFAULT, LANE_SILENT, Pattern, Section, clonePattern, defaultSong, MixSetup, emptyPattern, MAX_ARRANGEMENT, MAX_PATTERNS, MAX_STEPS, sanitizeSong, sectionSeconds, Song, Step, ALL_TRACKS, MIDI_TRACKS, MidiTrackSetup, defaultMidiTracks, TRACKS,
 } from "../seq/song";
 
 const KEY = "websynth.song.v1";
@@ -81,6 +81,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         <label class="kc"><span>Clock</span><select id="sq-clock"><option value="0">Internal</option><option value="1">MIDI in</option></select><output id="sq-ext"></output></label>
         <label class="kc"><span>Swing</span><input id="sq-swing" type="range" min="0" max="50"><output id="sq-swingo"></output></label>
         <label class="kc"><span>Loop song</span><input id="sq-loop" type="checkbox" checked></label>
+        <label class="kc"><span>Clock out</span><input id="sq-clkout" type="checkbox"></label>
         <div class="tpfile">
           <button id="sq-export">Export song</button>
           <label class="file">Import song <input id="sq-import" type="file" accept=".json"></label>
@@ -89,7 +90,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         </div>
       </div>
     </section>
-    <section class="module"><h4>Channels</h4><div id="sq-tracks" class="seq-tracks"></div></section>
+    <section class="module"><h4>Channels</h4><div id="sq-tracks" class="seq-tracks"></div><div id="sq-midi" class="seq-tracks"></div></section>
     <details class="fxp module"><summary>Master effects</summary><div id="sq-fx" class="knobs"></div></details>
     <section class="module"><h4>Patterns</h4>
       <div class="seq-bar" id="sq-patbar"></div>
@@ -138,6 +139,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   const cur = () => song.patterns[pat];
 
   function preview(note: number, vel = 100): void {
+    if (track >= TRACKS) return;
     deps.send({ type: "trackNoteOn", track, note, vel });
     setTimeout(() => deps.send({ type: "trackNoteOff", track, note }), 220);
   }
@@ -167,7 +169,18 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     return `<details class="modp" data-mod-t="${i}"${open}><summary>Modulation${t.mod ? " &bull;" : ""}</summary>${modPanelHtml(t.mod ?? defaultMod(), labels)}</details>`;
   }
 
+  /** The MIDI-only tracks: pick one to edit its steps, its channel, mute and step division. */
+  function renderMidiTracks(): void {
+    const ms = (song.midi ??= defaultMidiTracks());
+    $("sq-midi").innerHTML = ms.map((m: MidiTrackSetup, k) => `<div class="trk${track === TRACKS + k ? " sel" : ""}" data-mt="${k}">
+      <button data-mact="sel">MIDI ${k + 1}</button>
+      <label class="kc wideSel"><span>Channel</span><select data-mact="ch">${Array.from({ length: 16 }, (_, c) => `<option value="${c + 1}"${m.channel === c + 1 ? " selected" : ""}>${c + 1}</option>`).join("")}</select></label>
+      <label class="kc wideSel"><span>Step</span><select data-mact="div">${ARP_RATES.map((n, d) => `<option value="${d}"${(m.seq?.div ?? 2) === d ? " selected" : ""}>${n}</option>`).join("")}</select></label>
+      <label class="kc"><span>Mute</span><input type="checkbox" data-mact="mute"${m.mute ? " checked" : ""}></label></div>`).join("");
+  }
+
   function renderTracks(): void {
+    renderMidiTracks();
     const lib = deps.library();
     $("sq-tracks").innerHTML = song.tracks
       .map((t, i) => {
@@ -206,7 +219,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     const from = Math.min(Number($<HTMLSelectElement>("sq-from").value || 0), len - 1), to = Math.min(Number($<HTMLSelectElement>("sq-to").value || len - 1), len - 1);
     $("sq-from").innerHTML = Array.from({ length: len }, (_, k) => o(k, from)).join("");
     $("sq-to").innerHTML = Array.from({ length: len }, (_, k) => o(k, Math.max(from, to))).join("");
-    $("sq-copyto").innerHTML = Array.from({ length: TRACKS }, (_, k) => (k === track ? "" : `<option value="${k}">Track ${k + 1}</option>`)).join("");
+    $("sq-copyto").innerHTML = Array.from({ length: ALL_TRACKS }, (_, k) => (k === track ? "" : `<option value="${k}">${k < TRACKS ? `Track ${k + 1}` : `MIDI ${k - TRACKS + 1}`}</option>`)).join("");
   }
 
   function renderPatterns(): void {
@@ -220,6 +233,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     ($<HTMLInputElement>("sq-bpm")).value = String(song.bpm);
     $("sq-bpmo").textContent = String(Math.round(song.bpm));
     $<HTMLInputElement>("sq-loop").checked = song.loop !== false;
+    $<HTMLInputElement>("sq-clkout").checked = !!song.clockOut;
     ($<HTMLInputElement>("sq-swing")).value = String(Math.round(song.swing * 100));
     $("sq-swingo").textContent = `${Math.round(song.swing * 100)}%`;
     renderTools();
@@ -228,7 +242,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   const DRUM_LANES: Record<number, string> = { 36: "KICK", 37: "RIM", 38: "SNARE", 39: "CLAP", 42: "HAT CL", 45: "TOM", 46: "HAT OP", 56: "BELL" };
 
   function renderRoll(): void {
-    const isDrum = deps.library().find((p) => p.id === song.tracks[track].patch)?.instrument.kind === "drum";
+    const isDrum = deps.library().find((p) => p.id === song.tracks[track]?.patch)?.instrument.kind === "drum";
     const len = cur().length;
     const steps = cur().steps[track];
     let html = `<div class="rl" style="--cols:${len}">`;
@@ -270,7 +284,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
 
   /** Parameters the current track's motion can move: the fixed ones and the engine's E1..E8. */
   function motionParams(): MParam[] {
-    const inst = deps.library().find((p) => p.id === song.tracks[track].patch)?.instrument;
+    const inst = deps.library().find((p) => p.id === song.tracks[track]?.patch)?.instrument;
     return paramList(inst?.kind === "engine" ? engineById(inst.engine)?.def : undefined);
   }
 
@@ -320,6 +334,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
     el.innerHTML = `<label>Repeat <select data-sec="repeat">${Array.from({ length: 16 }, (_, k) => `<option${(sec.repeat ?? 1) === k + 1 ? " selected" : ""}>${k + 1}</option>`).join("")}</select></label>` +
       Array.from({ length: TRACKS }, (_, t) => `<label>Track ${t + 1} <select data-sec="lane${t}">${opts(lanes[t])}</select></label>`).join("") +
       `<div class="seq-bar">` + Array.from({ length: TRACKS }, (_, t) => `<label>Sound ${t + 1} <select data-sec="sound${t}"><option value="">track's own</option>${deps.library().map((e) => `<option value="${e.id}"${sec.sounds?.[t] === e.id ? " selected" : ""}>${e.id}</option>`).join("")}</select></label>`).join("") + `</div>` +
+      `<div class="seq-bar">` + Array.from({ length: MIDI_TRACKS }, (_, k) => `<label>MIDI ${k + 1} <select data-sec="mlane${k}">${opts(sec.mlanes?.[k] ?? LANE_DEFAULT)}</select></label>`).join("") + `</div>` +
       `<div class="seq-bar">Punch FX ` + Array.from({ length: 4 }, (_, k) => { const p = sec.punches?.[k]; return `<label><select data-sec="pfx${k}"><option value="-1">none</option>${PUNCH_NAME.map((n, i) => `<option value="${i}"${p?.fx === i ? " selected" : ""}>${n}</option>`).join("")}</select> at <input data-sec="pst${k}" type="number" min="0" max="511" value="${p?.step ?? 0}" style="width:3.5em"> for <input data-sec="pln${k}" type="number" min="1" max="512" value="${p?.len ?? 4}" style="width:3.5em"></label>`; }).join("") + `</div>`;
   }
 
@@ -505,6 +520,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
         if (kind === "fx") { if (v < 0) list.splice(k, 1); else if (list[k]) list[k].fx = v; else list.push({ fx: v, step: 0, len: 4 }); }
         else if (list[k]) { if (kind === "st") list[k].step = Math.max(0, v); else list[k].len = Math.max(1, v); }
         if (!list.length) delete sec.punches;
+      } else if (el.dataset.sec.startsWith("mlane")) {
+        const k = Number(el.dataset.sec.slice(5));
+        sec.mlanes ??= Array(MIDI_TRACKS).fill(LANE_DEFAULT);
+        sec.mlanes[k] = v;
+        if (sec.mlanes.every((l) => l === LANE_DEFAULT)) delete sec.mlanes;
       } else if (el.dataset.sec.startsWith("sound")) {
         const t = Number(el.dataset.sec.slice(5)), id = (el as HTMLSelectElement).value;
         sec.sounds ??= Array(TRACKS).fill(null);
@@ -561,7 +581,7 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   ($<HTMLSelectElement>("sq-tlen")).onchange = (e) => {
     const v = Number((e.target as HTMLSelectElement).value);
     const p = cur();
-    p.lens ??= Array.from({ length: TRACKS }, () => p.length);
+    p.lens ??= Array.from({ length: ALL_TRACKS }, () => p.length);
     p.lens[track] = v;
     if (p.lens.every((x) => x === p.length)) delete p.lens;
     commit(); renderRoll();
@@ -599,10 +619,11 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
   };
   $("sq-oct-d").onclick = () => { base = Math.max(12, base - 12); renderRoll(); };
   $("sq-oct-u").onclick = () => { base = Math.min(96, base + 12); renderRoll(); };
+  $<HTMLInputElement>("sq-clkout").onchange = (e) => { if ((e.target as HTMLInputElement).checked) song.clockOut = true; else delete song.clockOut; commit(); };
   $<HTMLInputElement>("sq-loop").onchange = (e) => { if ((e.target as HTMLInputElement).checked) delete song.loop; else song.loop = false; commit(); };
   // REC: notes played while the song runs are written into the selected track's pattern (the worklet sends each step back)
   let recording = false, takeSnap: Pattern[] | null = null;
-  const sendRec = (): void => deps.send({ type: "rec", track: recording ? track : -1 });
+  const sendRec = (): void => deps.send({ type: "rec", track: recording && track < TRACKS ? track : -1 });
   $("sq-rec").onclick = () => {
     recording = !recording;
     if (recording) { takeSnap = JSON.parse(JSON.stringify(song.patterns)); ($("sq-undo") as HTMLButtonElement).disabled = false; }
@@ -628,6 +649,23 @@ export function mountSequencer(root: HTMLElement, deps: SequencerDeps) {
       if (!Number.isNaN(dst)) copyTrack(cur(), track, dst);
     } else return;
     commit(); renderRoll();
+  });
+  $("sq-midi").addEventListener("click", (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLElement>("[data-mact=sel]");
+    const row = b?.closest<HTMLElement>("[data-mt]");
+    if (!b || !row) return;
+    track = TRACKS + Number(row.dataset.mt); recording = false; $("sq-rec").classList.remove("sel"); sendRec();
+    renderTracks(); renderPatterns(); renderRoll();
+  });
+  $("sq-midi").addEventListener("change", (ev) => {
+    const el = ev.target as HTMLInputElement | HTMLSelectElement;
+    const row = el.closest<HTMLElement>("[data-mt]");
+    if (!row || !el.dataset.mact || el.dataset.mact === "sel") return;
+    const m = (song.midi ??= defaultMidiTracks())[Number(row.dataset.mt)];
+    if (el.dataset.mact === "ch") m.channel = Number(el.value);
+    else if (el.dataset.mact === "div") m.seq = { ...(m.seq ?? {}), div: Number(el.value) };
+    else if (el.dataset.mact === "mute") m.mute = (el as HTMLInputElement).checked;
+    commit();
   });
   $("sq-arr-add").onclick = () => {
     if (song.arrangement.length >= MAX_ARRANGEMENT) return;

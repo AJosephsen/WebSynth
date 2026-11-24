@@ -53,6 +53,7 @@ app.innerHTML = `
       <section class="module"><h4>MIDI <small>(channel routing and controller learn; the clock is on the Sequencer tab)</small></h4>
         <div class="knobs" id="midictl">
           <label class="kc"><span>MIDI in</span><select id="midi-route"><option value="0">Keyboard (all channels)</option><option value="1">Channels 1-4 play tracks 1-4</option></select></label>
+          <label class="kc"><span>MIDI out</span><select id="midi-out"><option value="">(none)</option></select></label>
           <label class="kc"><span>Learn for</span><select id="learn-target"><option value="-1">Live keyboard</option>${[0, 1, 2, 3].map((k) => `<option value="${k}">Track ${k + 1}</option>`).join("")}</select></label>
           <label class="kc"><span>Parameter</span><select id="learn-param"></select></label>
           <button id="learn-arm">Learn CC</button><output id="learn-info"></output>
@@ -299,7 +300,9 @@ $("learn-list").addEventListener("click", (ev) => {
   learnMap.splice(Number(b.dataset.learnDel), 1);
   saveLearn(); node?.port.postMessage({ type: "learnMap", map: learnMap }); fillLearn();
 });
+let midiOutPort: MIDIOutput | null = null;
 function onWorkletMessage(m: { type: string; [k: string]: unknown }): boolean {
+  if (m.type === "midiOut") { try { midiOutPort?.send(m.bytes as number[]); } catch { /* the port went away */ } return true; }
   if (m.type === "chord") {
     const mode = m.chrd as number, root = m.root as number, mask = m.mask as number;
     const name = mode === 10 ? autoChordName(root, mask) : mode === 11 ? melodyChordName(root, mask) : chordName(root, mask);
@@ -459,7 +462,16 @@ async function connectMidi(): Promise<void> {
       };
     });
     hook();
-    access.onstatechange = hook;
+    const fillOut = () => {
+      const sel = $<HTMLSelectElement>("midi-out");
+      const outs = [...access.outputs.values()];
+      sel.innerHTML = `<option value="">(none)</option>` + outs.map((o) => `<option value="${o.id}"${o.id === midiOutPort?.id ? " selected" : ""}>${o.name ?? o.id}</option>`).join("");
+      sel.onchange = () => { midiOutPort = outs.find((o) => o.id === sel.value) ?? null; try { localStorage.setItem("websynth.midiout", sel.value); } catch { /* storage unavailable */ } };
+      const saved = (() => { try { return localStorage.getItem("websynth.midiout"); } catch { return null; } })();
+      if (!midiOutPort && saved) { midiOutPort = outs.find((o) => o.id === saved) ?? null; if (midiOutPort) sel.value = saved; }
+    };
+    fillOut();
+    access.onstatechange = () => { hook(); fillOut(); };
     status.textContent = access.inputs.size ? "MIDI connected." : "No MIDI input found.";
   } catch {
     status.textContent = "MIDI access was not granted.";

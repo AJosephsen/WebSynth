@@ -13,6 +13,13 @@ export type Step = {
 } | null;
 
 export const TRACKS = 4;
+/** The MIDI-only tracks (Melodee's tracks 5..8): sequenced like the parts, never rendered, their notes go out as MIDI. Their steps are rows 4..7 of a pattern. */
+export const MIDI_TRACKS = 4;
+export const ALL_TRACKS = TRACKS + MIDI_TRACKS;
+
+/** A MIDI track: the channel (1..16) its notes go out on, mute, and its step timing. */
+export interface MidiTrackSetup { channel: number; mute: boolean; seq?: { div?: number; swing?: number; gate?: number; quantize?: number } }
+export const defaultMidiTracks = (): MidiTrackSetup[] => Array.from({ length: MIDI_TRACKS }, (_, k) => ({ channel: k + 1, mute: false }));
 /** A motion record of a pattern: a parameter value at a step of a track; a lock lasts that step only. */
 export interface MotionRecord { track: number; step: number; param: number; value: number; lock?: boolean }
 export const MOTION_MAX = 128;
@@ -66,6 +73,8 @@ export interface Section {
   repeat?: number;
   /** Per track: a pattern index, -1 the section's own pattern, -2 silent. */
   lanes?: number[];
+  /** The MIDI tracks' lanes (as lanes: -1 the section's own pattern, -2 silent, or a pattern). */
+  mlanes?: number[];
   /** Per track: an instrument id the section plays instead of the track's own sound (null: the track's own). */
   sounds?: (string | null)[];
   /** Up to four timed master punches (Melodee's song punch FX): effect 0..26, the step of the section's clock track it starts on and its length in steps. */
@@ -84,13 +93,17 @@ export interface Song {
   sections?: Section[];
   /** LOOP SONG: after the last section the song starts again (default); false: it stops. */
   loop?: boolean;
+  /** The MIDI-only tracks' setups (channel, mute, step timing). */
+  midi?: MidiTrackSetup[];
+  /** CLOCK OUT: the song sends MIDI clock, start and stop. */
+  clockOut?: boolean;
 }
 
 export const MAX_PATTERNS = 16;
 export const MAX_ARRANGEMENT = 64;
 
 export function emptyPattern(name: string, length = 16): Pattern {
-  return { name, length, steps: Array.from({ length: TRACKS }, () => Array<Step>(MAX_STEPS).fill(null)) };
+  return { name, length, steps: Array.from({ length: ALL_TRACKS }, () => Array<Step>(MAX_STEPS).fill(null)) };
 }
 
 export function clonePattern(p: Pattern, name = p.name): Pattern {
@@ -100,7 +113,7 @@ export function clonePattern(p: Pattern, name = p.name): Pattern {
 /** Builds a pattern from per-track step lists (shorter lists are padded with rests). */
 export function patternFrom(name: string, tracks: Step[][], length = 16): Pattern {
   const p = emptyPattern(name, length);
-  tracks.slice(0, TRACKS).forEach((t, i) => t.slice(0, MAX_STEPS).forEach((s, j) => (p.steps[i][j] = s)));
+  tracks.slice(0, ALL_TRACKS).forEach((t, i) => t.slice(0, MAX_STEPS).forEach((s, j) => (p.steps[i][j] = s)));
   return p;
 }
 
@@ -111,7 +124,7 @@ export function sanitizeSong(raw: unknown): Song | null {
   const clamp = (x: unknown, lo: number, hi: number, d: number) => (typeof x === "number" && isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d);
   const patterns = s.patterns.slice(0, MAX_PATTERNS).map((p, i) => {
     const out = emptyPattern(typeof p?.name === "string" ? p.name.slice(0, 16) : `P${i + 1}`, Math.round(clamp(p?.length, 4, MAX_STEPS, 16)));
-    for (let t = 0; t < TRACKS; t++)
+    for (let t = 0; t < ALL_TRACKS; t++)
       for (let j = 0; j < MAX_STEPS; j++) {
         const st = p?.steps?.[t]?.[j];
         if (st && Array.isArray(st.notes) && st.notes.length)
@@ -138,7 +151,7 @@ export function sanitizeSong(raw: unknown): Song | null {
       });
       if (recs.length) out.motion = recs;
     }
-    if (Array.isArray(p?.lens)) out.lens = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(p.lens?.[t], 1, MAX_STEPS, out.length)));
+    if (Array.isArray(p?.lens)) out.lens = Array.from({ length: ALL_TRACKS }, (_, t) => Math.round(clamp(p.lens?.[t], 1, MAX_STEPS, out.length)));
     return out;
   });
   const arrangement = (Array.isArray(s.arrangement) ? s.arrangement : [0])
@@ -182,11 +195,12 @@ export function sanitizeSong(raw: unknown): Song | null {
     const r = rawSections[i];
     const repeat = Math.round(clamp(r?.repeat, 1, 16, 1));
     const lanes = Array.from({ length: TRACKS }, (_, t) => Math.round(clamp(r?.lanes?.[t], -2, patterns.length - 1, -1)));
+    const mlanes = Array.from({ length: MIDI_TRACKS }, (_, t) => Math.round(clamp(r?.mlanes?.[t], -2, patterns.length - 1, -1)));
     const sounds = Array.from({ length: TRACKS }, (_, t) => (typeof r?.sounds?.[t] === "string" ? r.sounds[t]!.slice(0, 64) : null));
     const punches = (Array.isArray(r?.punches) ? r.punches : []).slice(0, 4).map((p) => ({ fx: Math.round(clamp(p?.fx, 0, 26, 0)), step: Math.round(clamp(p?.step, 0, 511, 0)), len: Math.round(clamp(p?.len, 1, 512, 4)) }));
-    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}), ...(sounds.some((x) => x) ? { sounds } : {}), ...(punches.length ? { punches } : {}) };
+    return { ...(repeat > 1 ? { repeat } : {}), ...(lanes.some((l) => l !== -1) ? { lanes } : {}), ...(mlanes.some((l) => l !== -1) ? { mlanes } : {}), ...(sounds.some((x) => x) ? { sounds } : {}), ...(punches.length ? { punches } : {}) };
   });
-  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes || x.sounds || x.punches) ? { sections } : {}), ...(s.loop === false ? { loop: false } : {}) };
+  return { bpm: clamp(s.bpm, 40, 240, 104), swing: clamp(s.swing, 0, 0.5, 0), tracks, fx, patterns, arrangement: arr, ...(sections.some((x) => x.repeat || x.lanes || x.mlanes || x.sounds || x.punches) ? { sections } : {}), ...(s.loop === false ? { loop: false } : {}), ...(Array.isArray(s.midi) ? { midi: Array.from({ length: MIDI_TRACKS }, (_, k): MidiTrackSetup => { const m = s.midi?.[k]; const q = m?.seq; return { channel: Math.round(clamp(m?.channel, 1, 16, k + 1)), mute: !!m?.mute, ...(q ? { seq: { div: Math.round(clamp(q.div, 0, 9, 2)), swing: Math.round(clamp(q.swing, 0, 100, 0)), gate: Math.round(clamp(q.gate, 0, 127, 115)), quantize: q.quantize === 0 ? 0 : 1 } } : {}) }; }) } : {}), ...(s.clockOut ? { clockOut: true } : {}) };
 }
 
 /** The song the app starts with. */

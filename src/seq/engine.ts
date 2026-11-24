@@ -6,6 +6,7 @@ import { Perform } from "../fx/perform";
 import { Punch, punchNeedsRing } from "../fx/punch";
 import { Slicer, SlicerSetting } from "../fx/slicer";
 import { defaultInput, NoteInput } from "../synth/noteinput";
+import { MidiTrackOut } from "./miditrack";
 import { Harmony, newHarmonyTrack } from "../synth/harmony";
 import { divSamples } from "../synth/arp";
 import { motionParams } from "./params";
@@ -13,7 +14,7 @@ import { engineById } from "../engines/registry";
 import type { ModSetup } from "../mod/setup";
 import { LEVEL_Q12 } from "../engines/felucca-tables";
 import { Instrument, makeSynth, Synth } from "../synth/synth";
-import { LANE_DEFAULT, LANE_SILENT, MAX_STEPS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
+import { LANE_DEFAULT, LANE_SILENT, MAX_STEPS, MIDI_TRACKS, MixSetup, Pattern, Song, Step, TRACKS, defaultMix } from "./song";
 import { ClockGrid, MidiClock, clockPeriod, clockScale } from "./midiclock";
 import { Motion } from "./motion";
 import { SeqStep, ST_NOTE, ST_REST, ST_TIE, TrackSeq } from "./trackseq";
@@ -74,6 +75,13 @@ export class Engine {
   private lastBpm = 0;
   private units = 0;
   private readonly seqGrids = Array.from({ length: 4 }, () => new ClockGrid());
+  /** The MIDI-only tracks: sequencers whose notes go out as MIDI (see miditrack.ts). */
+  readonly midiSeqs: TrackSeq[] = [];
+  readonly midiOut: MidiTrackOut[] = Array.from({ length: MIDI_TRACKS }, () => new MidiTrackOut((b) => this.onMidiOut?.(b)));
+  private readonly midiGrids = Array.from({ length: MIDI_TRACKS }, () => new ClockGrid());
+  /** MIDI leaves the engine (the page sends it to the chosen output). */
+  onMidiOut?: (bytes: number[]) => void;
+  private clockAcc = 0;
   private readonly arpGrid = new ClockGrid();
   private readonly patGrid = new ClockGrid();
   // effects
@@ -127,6 +135,7 @@ export class Engine {
     this.fxs = this.makeFx(song);
     this.motions = Array.from({ length: TRACKS }, (_, i) => new Motion(() => this.tracks[i]?.synth.paramStore));
     this.seqs = Array.from({ length: TRACKS }, (_, i) => this.makeSeq(i));
+    for (let k = 0; k < MIDI_TRACKS; k++) this.midiSeqs.push(this.makeMidiSeq(k));
     this.applyTracks();
   }
 
@@ -431,6 +440,17 @@ export class Engine {
     return seq;
   }
 
+  private makeMidiSeq(k: number): TrackSeq {
+    return new TrackSeq({ on: (n, v) => this.midiOut[k].noteOn(n, v), off: (n) => this.midiOut[k].noteOff(n), slide: () => undefined });
+  }
+
+  /** The pattern a MIDI track plays in the current section, undefined: it rests. */
+  private midiLanePattern(k: number): Pattern | undefined {
+    const lane = this.mode === "song" ? this.song.sections?.[this.arrPos]?.mlanes?.[k] ?? LANE_DEFAULT : LANE_DEFAULT;
+    if (lane === LANE_SILENT) return undefined;
+    return lane >= 0 ? this.song.patterns[lane] ?? this.currentPattern() : this.currentPattern();
+  }
+
   /** Hands the current pattern's steps and the tracks' step timing to the sequencers; top: a new pattern begins, carry samples in. */
   private applyPattern(top: boolean, carry: number): void {
     const gswing = Math.min(100, Math.round(this.song.swing * 250));
@@ -451,6 +471,16 @@ export class Engine {
       this.motions[i].events = (pat?.motion ?? []).filter((m) => m.track === i).map((m) => ({ step: m.step, param: m.param, value: m.value, lock: m.lock }));
       if (top) { seq.top(carry); this.motions[i].restore(); }
     });
+    this.midiSeqs.forEach((seq, k) => {
+      const ms = this.song.midi?.[k], pat = this.midiLanePattern(k);
+      this.midiOut[k].settings = { channel: ms?.channel ?? k + 1, blocked: !!ms?.mute };
+      if (pat) {
+        seq.steps = (pat.steps[TRACKS + k] ?? []).map(toSeqStep);
+        seq.p = { len: pat.lens?.[TRACKS + k] ?? Math.min(pat.length, MAX_STEPS), div: ms?.seq?.div ?? 2, swing: ms?.seq?.swing ?? 0, gate: ms?.seq?.gate ?? 115, quantize: ms?.seq?.quantize ?? 1 };
+      } else { seq.steps = []; seq.p = { len: 16, div: 2, swing: 0, gate: 115, quantize: 1 }; }
+      seq.globalSwing = gswing;
+      if (top) seq.top(carry);
+    });
   }
 
   play(): void {
@@ -466,6 +496,8 @@ export class Engine {
     this.applySectionSounds();
     this.applyPattern(false, 0);
     for (const s of this.seqs) s.start();
+    for (const s of this.midiSeqs) s.start();
+    if (this.song.clockOut) { this.clockAcc = 0; this.onMidiOut?.([0xfa]); }
     for (const m of this.motions) m.begin();
     for (const sl of this.slicers) sl.start();
     this.perform.start();
@@ -479,6 +511,9 @@ export class Engine {
     this.punchLayer.songReq = -1;
     this.punchLayer.songBuffered = false;
     for (const s of this.seqs) s.stop();
+    for (const s of this.midiSeqs) s.stop();
+    for (const o of this.midiOut) o.allOff();
+    if (this.playing === false && this.song.clockOut) this.onMidiOut?.([0xfc]);
     for (const m of this.motions) m.end();
     for (const t of this.tracks) t.synth.allOff();
   }
@@ -518,6 +553,8 @@ export class Engine {
       this.applyPattern(true, carry);
     }
     this.applySectionPunch();
+    this.midiSeqs.forEach((s, k) => { this.midiOut[k].tick(); s.tick(this.clockMode ? this.midiGrids[k].advance(units, quarter, s.p.div) : CTL, quarter); });
+    if (this.song.clockOut && !this.clockMode) { this.clockAcc += CTL; const pulse = quarter / 24; while (this.clockAcc >= pulse) { this.clockAcc -= pulse; this.onMidiOut?.([0xf8]); } }
     this.seqs.forEach((s, i) => s.tick(this.clockMode ? this.seqGrids[i].advance(units, quarter, s.p.div) : CTL, quarter));
   }
 

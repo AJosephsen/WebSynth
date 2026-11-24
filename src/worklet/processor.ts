@@ -51,6 +51,7 @@ class SynthProcessor extends AudioWorkletProcessor {
     this.engine.onTempo = (bpm) => this.port.postMessage({ type: "tempo", bpm });
     this.engine.liveInput.onChord = (c) => { if (c.notes.length > 1 || c.chrd === 11) this.port.postMessage({ type: "chord", ...c }); };
     this.engine.onRecord = (track, pattern, step, data) => this.port.postMessage({ type: "rec", track, pattern, step, data });
+    this.engine.onMidiOut = (bytes) => this.port.postMessage({ type: "midiOut", bytes });
     this.engine.onSongEnd = () => this.port.postMessage({ type: "stopped" });
     this.engine.onLearned = (cc, track, param) => this.port.postMessage({ type: "learned", cc, track, param });
     this.engine.onStep = (pattern, step, arrPos) => this.port.postMessage({ type: "pos", pattern, step, arrPos });
