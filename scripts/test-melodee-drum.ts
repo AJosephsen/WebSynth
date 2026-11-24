@@ -9,6 +9,8 @@ import { DK_808, DK_909, DK_CR78, DK_FM, MelodeeDrum } from "../src/drum/mkit";
 import { Dither, pow2q16 } from "../src/drum/mdsp";
 import { fmExp2f, fmExpf, fmLog2f, fmSinf, fmTanf } from "../src/drum/fastmath";
 import { TANH_TAB } from "../src/drum/m909";
+import { DRUM_PRESETS, DrumSynth } from "../src/drum/drumsynth";
+import { drumEntries } from "../src/instruments";
 
 const f = Math.fround;
 const M32 = 0x100000000;
@@ -134,8 +136,24 @@ for (let kit = 0; kit < 4; kit++) {
   }
 }
 
-const gold = readFileSync("tests/melodee-drum-gold.txt", "utf8").trim().split("\n");
+// the instrument: the factory entries, the playable DrumSynth on each Melodee KIT, the pad maps
 let bad = 0;
+const must = (ok: boolean, what: string): void => { if (!ok) { bad++; console.log(`FAIL ${what}`); } };
+for (const name of ["808 KIT", "909 KIT", "CR78 KIT", "FM KIT"]) must(drumEntries.some((e) => e.id === `DRUM/${name}`), `entry DRUM/${name}`);
+for (const k of [12, 13, 14, 15]) {
+  const ps = DRUM_PRESETS.find((x) => x.params[0] === k)!;
+  const s = new DrumSynth(ps.params);
+  s.noteOn(36, 110);
+  s.noteOn(42, 90);
+  const buf = new Float32Array(4410);
+  s.render(buf, 0, 4410);
+  must(buf.some((x) => Math.abs(x) > 0.02) && buf.every((x) => Math.abs(x) < 4), `DrumSynth kit ${k} sounds, within range`);
+  must(s.activeVoices >= 0, `kit ${k} voices`);
+}
+const dk909 = new DrumSynth([13, 64, 64, 64, 64, 100, 0, 0]), dk808 = new DrumSynth([12, 64, 64, 64, 64, 100, 0, 0]);
+must(dk808.mpcNote(0) === 36 && dk808.mpcNote(6) === 56 && dk808.mpcNote(11) === 70 && dk909.mpcNote(6) === 51 && dk909.mpcNote(11) === 51, "MPC pad maps");
+
+const gold = readFileSync("tests/melodee-drum-gold.txt", "utf8").trim().split("\n");
 gold.forEach((g, i) => {
   if (g !== lines[i]) {
     bad++;
