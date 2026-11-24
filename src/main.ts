@@ -7,6 +7,7 @@ import { factoryEntries, fm6Entry, LibraryEntry, loadUserEngineEntries, saveUser
 import { mountEngineEditor } from "./ui/engineeditor";
 import { mountKnobs } from "./ui/knobs";
 import { PF_NAMES } from "./fx/perform";
+import { mountPunch } from "./ui/punch";
 import { ARP_MODES, ARP_RATES } from "./synth/arp";
 import { chordControls } from "./ui/inputui";
 import { autoChordName, chordName, melodyChordName } from "./synth/harmony";
@@ -257,6 +258,8 @@ $<HTMLInputElement>("pf-latch").addEventListener("change", (ev) => {
   if (!(ev.target as HTMLInputElement).checked) { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); }
 });
 $("pf-off").addEventListener("click", () => { node?.port.postMessage({ type: "perfKill" }); [...padLit].forEach((e) => padShow(e, false)); });
+
+mountPunch(app.querySelector<HTMLElement>('.tab[data-tab="perf"]')!, (m) => node?.port.postMessage(m)); // punch-in FX pad
 
 // ---- MIDI: routing and controller learn ----
 let midiRoute = 0;

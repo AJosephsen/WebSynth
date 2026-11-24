@@ -36,7 +36,7 @@ const SR_POS_AT = 19362, SR_APPOS_AT = 19370, SR_LOW_AT = 19376; // byte offsets
 const pxLoop = (fx: number): boolean => fx <= PX_STUT || fx === PX_LOOP8T;
 const pxReplay = (fx: number): boolean => fx <= PX_HALF || fx === PX_LOOP8T;
 const divPow2 = (x: number, shift: number): number => (x + (((x >>> 31) * ((1 << shift) - 1)) | 0)) >> shift;
-const needsRing = (fx: number): boolean =>
+export const punchNeedsRing = (fx: number): boolean =>
   fx >= 0 && (fx <= PX_HALF || fx === PX_ECHO || fx === PX_WOBBLE || fx === PX_RWD || fx === PX_OCT || fx === PX_FLANGE || fx === PX_FREEZE || fx === PX_LOOP8T);
 
 /** The key of an effect (0..26 from F3) and back: the 16 white keys, then the 11 black ones. */
@@ -304,7 +304,7 @@ export class Punch {
     if (this.songBuffered || this.keyHeld) this.alloc();
     let want = this.req >= 0 ? this.req : this.songReq;
     if (want < -1 || want >= PUNCH_NFX) want = -1;
-    if (needsRing(want) && !this.ring) want = -1;
+    if (punchNeedsRing(want) && !this.ring) want = -1;
     if (this.cur < 0 && want < 0) { // idle: only the ring
       if (this.ring && !this.wasFreeze) for (let i = 0; i < n; i++) this.ring[this.w++ & MASK] = clamp((l[i] + r[i]) >> 4, -32768, 32767), this.w >>>= 0;
       return;

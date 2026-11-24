@@ -44,3 +44,9 @@ src/sampler/user.ts: TypeScript port of Felucca's user sample pipeline (tools/sa
 src/seq/midiclock.ts: TypeScript port of Felucca's external MIDI clock follower (midi_clock.c, adapted there from contributions by ChanceTheMaker and keremimo; GPL-3.0-only). The MIDI channel controls and controller learn follow midi_control.c and midi_learn.c (adapted from a contribution by ChanceTheMaker).
 src/mod/mod.ts: TypeScript port of Felucca's modulation matrix (mod.c) and track LFO (voice.c: waves, SYNC, FADE, S&H, SLEW; GPL-3.0-only).
 tests/ins-gold.txt is reference output of that code.
+
+src/fx/punch.ts: TypeScript port of Melodee's PUNCH-IN FX (firmware/src/punch.c, with the FREEZE reverb of fx_sloop_reverb.h: 27 master effects, pocket-operator style).
+Melodee (https://github.com/keremimo/melodee) is GPL-3.0-only, Copyright (C) 2026 Kerem Kilic (Ellic Studio), a modified version of Felucca. The SLOOP punch DSP and
+stereo reverb/freeze are by isod89, adapted from isod89/sloop-fm1 (https://github.com/isod89/sloop-fm1), commit 4ec1ac829fd2bdf2c571ea215fb3d62477d01220 (GPL-3.0-only);
+the retained SVF equations and reverb input diffuser are Felucca's, Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments (GPL-3.0-only).
+src/ui/punch.ts is the pad that plays it. tests/punch-gold.txt is reference output of punch.c compiled in tests/punch-harness.c.

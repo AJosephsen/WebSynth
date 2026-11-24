@@ -28,6 +28,8 @@ type Msg =
   | { type: "perfK"; index: number; value: number }
   | { type: "perfLatch"; on: boolean }
   | { type: "perfKill" }
+  | { type: "punch"; fx: number }
+  | { type: "punchSong"; fx: number }
   | { type: "liveInput"; settings: InputSettings }
   | { type: "userSample"; slot: number; zones: Zone[] | null; data?: Uint8Array }
   | { type: "clockMode"; mode: number }
@@ -72,6 +74,8 @@ class SynthProcessor extends AudioWorkletProcessor {
         case "perfK": en.perform.k[m.index] = m.value; break;
         case "perfLatch": en.perform.latchOn = m.on; break;
         case "perfKill": en.perform.allOff(); break;
+        case "punch": en.punch(m.fx); break;
+        case "punchSong": en.punchSong(m.fx); break;
         case "userSample": loadUserSlot(m.slot, m.zones && m.data ? { zones: m.zones, data: m.data } : null); break;
         case "clockMode": en.setClockMode(m.mode); break;
         case "clock": if (m.status === 0xf8) en.clockPulse(); else en.clockTransport(m.status); break;

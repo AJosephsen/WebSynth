@@ -3,6 +3,7 @@ import { CTL } from "../engines/types";
 import { Dist, FxBus, FxSettings, Master } from "../fx/fx";
 import { Insert } from "../fx/insert";
 import { Perform } from "../fx/perform";
+import { Punch, punchNeedsRing } from "../fx/punch";
 import { Slicer, SlicerSetting } from "../fx/slicer";
 import { defaultInput, NoteInput } from "../synth/noteinput";
 import { Harmony, newHarmonyTrack } from "../synth/harmony";
@@ -80,6 +81,10 @@ export class Engine {
   private slicers: Slicer[] = [];
   /** The FX hold layer: throws, mutes (see fx/perform.ts). */
   readonly perform = new Perform();
+  /** The punch-in FX layer (27 master effects, see fx/punch.ts) and the transport phase it follows, in samples of the quarter. */
+  readonly punchLayer = new Punch();
+  private punchBeatPos = 0;
+  private readonly punchGrid = new ClockGrid();
   /** The live keyboard's input: chord keys and the arpeggiator. */
   /** What the chord keys' AUTO harmony hears: the four tracks and the live keyboard (the last). */
   readonly harmony = new Harmony(Array.from({ length: TRACKS + 1 }, newHarmonyTrack), { solo: () => 0, beatSamples: () => this.quarter() });
@@ -126,6 +131,17 @@ export class Engine {
   /** Samples in a quarter note: the measured one while an external clock runs. */
   private quarter(): number {
     return this.clockMode && this.clock.beatSamples ? this.clock.beatSamples : Math.round((this.sampleRate * 60) / this.song.bpm);
+  }
+
+  /** Hold the punch effect fx (0..26) on the master mix; -1 releases it (the key of a pad). */
+  punch(fx: number): void { this.punchLayer.hold(fx); }
+
+  /** The song's punch request: the effect fx (-1 none), restarted by every call that names one (a new event in the song). */
+  punchSong(fx: number): void {
+    const p = this.punchLayer;
+    p.songReq = fx >= 0 && fx < 27 ? fx : -1;
+    p.songBuffered = p.songReq >= 0 && punchNeedsRing(p.songReq);
+    if (p.songReq >= 0) p.songGate++;
   }
 
   /** Follow the song's tempo (0) or a MIDI clock in (1). */
@@ -379,10 +395,15 @@ export class Engine {
     for (const m of this.motions) m.begin();
     for (const sl of this.slicers) sl.start();
     this.perform.start();
+    this.punchBeatPos = 0;
+    this.punchGrid.remainder = 0;
   }
 
   stop(): void {
     this.playing = false;
+    this.punchLayer.hold(-1); // Stop ends a punch request (seq.c seq_stop)
+    this.punchLayer.songReq = -1;
+    this.punchLayer.songBuffered = false;
     for (const s of this.seqs) s.stop();
     for (const m of this.motions) m.end();
     for (const t of this.tracks) t.synth.allOff();
@@ -549,6 +570,12 @@ export class Engine {
       this.mixR[i] = Math.imul((this.mixR[i] + this.wet[i]) >> 2, mg) >> 10;
     }
     if (perf) this.perform.block(this.mixL, this.mixR, CTL); // the FX layer between the master level and the limiter
+    const pu = this.punchLayer; // punch-in FX: after the master level, before the limiter
+    if (pu.active) { pu.beat = quarter; pu.playing = this.playing; pu.clock = this.punchBeatPos; pu.process(this.mixL, this.mixR, CTL); }
+    if (this.playing) { // the transport phase within the quarter
+      this.punchBeatPos += this.clockMode ? this.punchGrid.advance(this.units, quarter, 0) : CTL;
+      while (this.punchBeatPos >= quarter) this.punchBeatPos -= quarter;
+    }
     for (let i = 0; i < CTL; i++) {
       const [ol, or] = this.master.process(this.mixL[i], this.mixR[i]);
       this.fifoL[i] = ol / 32768;
