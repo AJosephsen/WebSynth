@@ -20,7 +20,7 @@ export interface EngineEditorDeps {
 const ENV_LABELS = ["Attack", "Decay", "Sustain", "Release"];
 const FTYPES = ["Low-pass", "Band-pass", "High-pass"];
 const DRUM_LABELS = ["Kit", "Tune", "Tone", "Decay", "Snap", "Accent", "Kick", "Drive"];
-const DRUM_KITS = [0, 4, 5, 6, 7, 8, 9, 10, 11]; // the kits a user can pick (1..3 are retired aliases)
+const DRUM_KITS = [0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]; // the kits a user can pick (1..3 are retired aliases; 12..15: Melodee's 808, 909, CR78, FM)
 const VOICE_MODES = ["Poly", "Mono", "Legato", "Unison"];
 const defaultVp = (mono: boolean): VoiceParams => ({ voice: mono ? 1 : 0, glide: 0, glmode: 0, prio: 0, alloc: 0, detune: 40, spread: 0 });
 const FX_LABELS = ["Dist", "Chorus", "Delay", "Reverb"];
@@ -51,7 +51,8 @@ export function mountEngineEditor(root: HTMLElement, deps: EngineEditorDeps) {
 
   function renderDrum(i: Extract<Editable, { kind: "drum" }>): void {
     let k = `<label class="kc"><span>Kit</span><select data-p="0">${DRUM_KITS.map((n) => `<option value="${n}"${i.params[0] === n ? " selected" : ""}>${DK_NAMES[n]}${n === 5 ? " (10)" : ""}</option>`).join("")}</select></label>`;
-    k += `<label class="kc"><span>Kick</span><select data-p="6"><option value="0"${i.params[6] ? "" : " selected"}>PUNCH</option><option value="1"${i.params[6] ? " selected" : ""}>ROUND</option></select></label>`;
+    const hats = i.params[0] === 14; // KIT CR78: its KICK knob picks the hats (HAT, METAL)
+    k += `<label class="kc"><span>${hats ? "Hats" : "Kick"}</span><select data-p="6"><option value="0"${i.params[6] ? "" : " selected"}>${hats ? "HAT" : "PUNCH"}</option><option value="1"${i.params[6] ? " selected" : ""}>${hats ? "METAL" : "ROUND"}</option></select></label>`;
     for (const n of [1, 2, 3, 4, 5, 7]) k += knob(DRUM_LABELS[n], `data-p="${n}"`, 0, 127, i.params[n]);
     root.innerHTML = head("DRUM", "KIT / HIT") + `<div class="panel">${module("Drums", k)}${fxModule(i)}</div>`;
   }

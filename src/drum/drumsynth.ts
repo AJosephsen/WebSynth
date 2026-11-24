@@ -1,5 +1,6 @@
 // A drum kit synth around Felucca's drum voices (eng_drum.c, GPL-3.0-only): eight mono lanes, the General MIDI drum
-// map, the kits and the knobs (TUNE, TONE, DECY, SNAP, ACC, KICK, DRV). See NOTICE.
+// map, the kits and the knobs (TUNE, TONE, DECY, SNAP, ACC, KICK, DRV). The kits 808, 909, CR78 and FM are Melodee's
+// (mkit.ts, GPL-3.0-only). See NOTICE.
 import { clamp, mulq15, softKnee, softclip, voiceAmp } from "../engines/dsp";
 import { CTL, Vmod } from "../engines/types";
 import type { Synth } from "../synth/synth";
@@ -7,9 +8,12 @@ import {
   DV_BELL, DV_CLAP, DV_HATC, DV_HATO, DV_KICK, DV_KTYPE, DV_NLANE, DV_RIM, DV_SNARE, DV_TOM, DVT_PUNCH, DVT_ROUND, DvCoef, DvMetal, DvParam, DvVoice, dvChoke,
   dvDefault, dvInit, dvMetalRun, dvMetalTune, dvRun, dvRunType, dvSetup, dvTrigger, dvUsesMetal,
 } from "./dv";
+import { DK_808, DK_909, DK_CR78, DK_FM, MelodeeDrum, drumMpcNote } from "./mkit";
 
-/** KIT values (stored): STD, then the model kits; 1..3 are retired aliases. */
-export const DK_NAMES = ["STD", "66", "10", "77", "80", "10", "66", "55", "77", "DEEP", "TIGHT", "PERC"];
+/** KIT values (stored): STD, then the model kits; 1..3 are retired aliases; 12..15 are Melodee's kits (TR-808, TR-909, CR-78, FM). */
+export const DK_NAMES = ["STD", "66", "10", "77", "80", "10", "66", "55", "77", "DEEP", "TIGHT", "PERC", "808", "909", "CR78", "FM"];
+/** the stored KIT of each Melodee kit, and the kit number the engine (mkit.ts) knows it by */
+const MEL_KITS: Record<number, number> = { 12: DK_808, 13: DK_909, 14: DK_CR78, 15: DK_FM };
 const DK_80 = 4;
 const DK_PLAYS = [0, 6, 5, 8, 4, 5, 6, 7, 8, 9, 10, 11];
 const DV_TYPE_LANE = [DV_KICK, DV_KICK, DV_SNARE, DV_CLAP, DV_HATC, DV_HATO, DV_TOM, DV_TOM, DV_RIM, DV_RIM, DV_BELL, DV_BELL];
@@ -58,20 +62,42 @@ export class DrumSynth implements Synth {
   private pos = CTL;
   private y = new Int32Array(CTL);
   private mb = new Int32Array(CTL);
+  /** The part when its KIT is one of Melodee's. */
+  private md: MelodeeDrum | null = null;
 
   constructor(params: number[]) {
     this.params = [...params];
+    this.pick();
   }
 
   setParams(params: number[]): void {
     this.params = [...params];
+    this.pick();
+  }
+
+  /** Melodee's engine for a Melodee KIT (new when the kit changes: another kit starts from rest), else none. */
+  private pick(): void {
+    const kit = MEL_KITS[this.params[0]];
+    if (kit === undefined) { this.md = null; return; }
+    if (!this.md || this.md.kit !== kit) {
+      this.md = new MelodeeDrum(kit, this.params);
+      this.laneLevel.fill(127);
+      this.pos = CTL;
+    }
+    this.md.p = [kit, ...this.params.slice(1)];
   }
 
   get activeVoices(): number {
-    return this.lanes.filter((l) => l.v.live || l.v.trig).length;
+    return this.md ? (this.md.active ? 1 : 0) : this.lanes.filter((l) => l.v.live || l.v.trig).length;
+  }
+
+  /** The GM note of MPC pad 0..15 (drum_mpc_note: the 808's pad map, the 909's on KIT 909). */
+  mpcNote(pad: number): number {
+    return drumMpcNote(this.md?.kit ?? DK_808, pad);
   }
 
   noteOn(note: number, velocity = 100): void {
+    if (this.md) { this.md.noteOn(note, velocity); return; }
     const { role, st } = gm(this.params, note);
     const lane = drumLane(note);
     const L = this.lanes[lane];
@@ -137,7 +163,11 @@ export class DrumSynth implements Synth {
     for (let i = 0; i < n; i++) {
       if (this.pos >= CTL) {
         if (this.activeVoices === 0) return;
-        this.block();
+        if (this.md) {
+          this.buf.fill(0);
+          this.md.ln = this.laneLevel;
+          this.md.block(this.buf);
+        } else this.block();
         this.pos = 0;
       }
       out[start + i] += (this.buf[this.pos++] / 32768) * 0.6 * this.gain;
@@ -156,4 +186,8 @@ export const DRUM_PRESETS: { name: string; params: number[]; fx: number[] }[] = 
   { name: "66 KIT", params: [6, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
   { name: "55 KIT", params: [7, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
   { name: "77 KIT", params: [8, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
+  { name: "808 KIT", params: [12, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
+  { name: "909 KIT", params: [13, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
+  { name: "CR78 KIT", params: [14, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
+  { name: "FM KIT", params: [15, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
 ];

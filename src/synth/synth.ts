@@ -19,6 +19,8 @@ export interface Synth {
   readonly voiceMode?: number;
   /** The part's keys are a kit (no chords). */
   readonly keyKit?: boolean;
+  /** A drum kit's MPC pad map: the GM note of pad 0..15 (QNT MPC, drum_mpc_note). */
+  mpcNote?(pad: number): number;
   /** The part's scale for microtonal pitch (engine instruments; null: 12-tone). */
   setScale?(km: import("./keymap").KeyMapParams | null): void;
   readonly spreadActive?: boolean;
