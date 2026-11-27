@@ -35,6 +35,7 @@ class Hit {
   stick = 0;
   stickDecay = 0;
   rim = false;
+  kick = false;
   hp1 = 0; lp1 = 0; lp2 = 0; hp2 = 0;
   vel = 1;
   age = 0;
@@ -68,16 +69,15 @@ export class AcousticDrums implements Synth {
     const v = Math.pow(Math.max(1, Math.min(127, velocity)) / 127, 1 - 0.55 * sens);
     let h = this.hits.find((x) => x.active && x.note === note) ?? this.hits.find((x) => !x.active);
     if (!h) h = this.hits.reduce((a, b) => (a.age < b.age ? a : b));
-    h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare;
+    h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare; h.kick = false;
     h.modes = []; h.shell = [];
     h.hp1 = h.lp1 = h.lp2 = h.hp2 = 0; h.follow = 0; h.wireEnv = 1;
     this.gateLeft = this.gateSamples();
-    if (isKick) { // a muted bass drum: a deep head that is damped at once, a soft beater, a little fall in pitch
-      const f = (note === 35 ? 50 : 55) * tune;
-      for (const [r, a, t] of [[1, 1, 0.1], [1.593, 0.25, 0.04], [2.136, 0.1, 0.025]]) h.modes.push({ f: f * r, amp: a * (r === 1 ? 1 : 0.4 + 0.6 * v), decay: Math.exp(-1 / (t * dec * FS)), env: 1, ph: 0 });
-      h.shell.push({ f: 95 * tune, amp: 0.25 * shellK * (0.4 + 0.6 * v), decay: Math.exp(-1 / (0.05 * FS)), env: 1, ph: 0.3 });
-      h.bend = (0.05 + 0.1 * bendK) * (0.3 + 0.7 * v); h.bendDecay = Math.exp(-1 / (0.03 * FS)); h.bendEnv = 1;
-      h.stick = 0.3 * (0.3 + 0.7 * tone) * (0.4 + 0.6 * v); h.stickDecay = Math.exp(-1 / (0.004 * FS)); h.wires = 0;
+    if (isKick) { // a muted bass drum: a deep head with a big fall in pitch (the boom), harmonic overtones only, a dull beater, everything low-passed
+      const f = (note === 35 ? 46 : 50) * tune;
+      for (const [r, a, t] of [[1, 1, 0.1], [2, 0.22, 0.045], [3, 0.06, 0.025]]) h.modes.push({ f: f * r, amp: a * (r === 1 ? 1 : 0.5 + 0.5 * v), decay: Math.exp(-1 / (t * dec * FS)), env: 1, ph: 0 });
+      h.bend = (0.9 + 1.1 * bendK) * (0.45 + 0.55 * v); h.bendDecay = Math.exp(-1 / (0.02 * FS)); h.bendEnv = 1;
+      h.stick = 0.5 * (0.3 + 0.7 * tone) * (0.4 + 0.6 * v); h.stickDecay = Math.exp(-1 / (0.006 * FS)); h.wires = 0; h.kick = true;
       return;
     }
     if (isRim) { // a side stick: a click and two short wooden modes
@@ -139,12 +139,13 @@ export class AcousticDrums implements Synth {
     h.bendEnv *= h.bendDecay;
     const head = s * 0.28 + shell * 0.2;
     let y = head;
-    if (h.stick > 1e-4) { // the stick: noise through a high-pass
+    if (h.stick > 1e-4) { // the stick: noise through a high-pass (the kick's beater is a dull thud: low-passed instead)
       const nz = this.noise();
-      h.hp1 += 0.45 * (nz - h.hp1);
-      y += (nz - h.hp1) * h.stick * 0.55;
+      if (h.kick) { h.hp1 += 0.06 * (nz - h.hp1); y += h.hp1 * h.stick * 2.4; }
+      else { h.hp1 += 0.45 * (nz - h.hp1); y += (nz - h.hp1) * h.stick * 0.55; }
       h.stick *= h.stickDecay;
     }
+    if (h.kick) { h.lp2 += 0.1 * (y - h.lp2); y = h.lp2 * 2.2; }
     if (h.rim) y = y * 1.4;
     if (h.wires > 0) { // the snare wires: noise through a band-pass, rattling with the head, then on by themselves
       const nz = this.noise();
