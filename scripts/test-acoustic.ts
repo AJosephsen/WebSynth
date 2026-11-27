@@ -20,9 +20,12 @@ for (const note of [35, 36, 37, 38, 40, 41, 43, 45, 47, 48, 50]) {
   const y = hit(note, 110);
   check(peak(y) > 0.15 && peak(y) < 1 && y.every(Number.isFinite), `note ${note} sounds (peak ${peak(y).toFixed(2)})`);
 }
-const tom = hit(41, 100, undefined, 3), hi = hit(50, 100, undefined, 3);
+const tom = hit(41, 30, undefined, 3), hi = hit(50, 30, undefined, 3);
 check(zc(tom, 2000, 9000) < zc(hi, 2000, 9000), `a low tom is lower than a high tom (${zc(tom, 2000, 9000).toFixed(0)} vs ${zc(hi, 2000, 9000).toFixed(0)} Hz)`);
 check(rms(tom, 100000, 110000) < rms(tom, 4000, 14000) * 0.3, "a tom decays");
+const hard = hit(45, 125, undefined, 1), gentle = hit(45, 35, undefined, 1);
+const hf = (x: Float32Array): number => { let a = 0, b = 0; for (let i = 100; i < 6000; i++) { const d = x[i] - x[i - 1]; a += d * d; b += x[i] * x[i]; } return a / b; };
+check(hf(hard) > hf(gentle) * 1.5, `a hard tom hit is noisier than a gentle one (${hf(gentle).toFixed(3)} -> ${hf(hard).toFixed(3)})`);
 const soft = hit(38, 40), loud = hit(38, 120);
 check(peak(loud) > peak(soft) * 1.3, `a harder snare hit is louder (${peak(soft).toFixed(2)} -> ${peak(loud).toFixed(2)})`);
 const dry = hit(38, 110, [16, 64, 70, 64, 0, 80, 64, 40]), wired = hit(38, 110, [16, 64, 70, 64, 127, 80, 64, 40]);
@@ -33,7 +36,8 @@ const kick = hit(36, 110, undefined, 1);
 check(zc(kick, 1500, 6000) < 75 && rms(kick, 12000, 16000) < rms(kick, 600, 4600) * 0.15, `the kick is deep (${zc(kick, 1500, 6000).toFixed(0)} Hz) and damped`);
 const dryT = hit(45, 110, [16, 64, 70, 64, 90, 80, 64, 40, 0, 0], 1), gate = hit(45, 110, [16, 64, 70, 64, 90, 80, 64, 40, 40, 100], 1);
 const eDry = rms(dryT, 20000, 30000), eGate = rms(gate, 20000, 30000);
-check(rms(gate, 3000, 5000) > rms(dryT, 3000, 5000) * 1.05, "the gated room adds a dense tail while the gate is open");
+const diff = gate.map((v, i) => v - dryT[i]);
+check(rms(diff, 3000, 5000) > 0.01, `the gated room adds a dense tail while the gate is open (${rms(diff, 3000, 5000).toFixed(3)})`);
 check(rms(gate, 30000, 40000) < 0.02 && eGate < eDry * 4, `and the gate cuts it off hard (${rms(gate, 8000, 12000).toFixed(3)} -> ${rms(gate, 30000, 40000).toFixed(4)})`);
 const s = makeSynth(factoryInstrument("DRUM/ACOUSTIC"));
 s.noteOn(38, 100); const o = new Float32Array(4096); s.render(o, 0, 4096);

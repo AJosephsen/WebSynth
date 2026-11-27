@@ -36,6 +36,7 @@ class Hit {
   stickDecay = 0;
   rim = false;
   kick = false;
+  jitter = 0;
   hp1 = 0; lp1 = 0; lp2 = 0; hp2 = 0;
   vel = 1;
   age = 0;
@@ -69,7 +70,7 @@ export class AcousticDrums implements Synth {
     const v = Math.pow(Math.max(1, Math.min(127, velocity)) / 127, 1 - 0.55 * sens);
     let h = this.hits.find((x) => x.active && x.note === note) ?? this.hits.find((x) => !x.active);
     if (!h) h = this.hits.reduce((a, b) => (a.age < b.age ? a : b));
-    h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare; h.kick = false;
+    h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare; h.kick = false; h.jitter = 0.004;
     h.modes = []; h.shell = [];
     h.hp1 = h.lp1 = h.lp2 = h.hp2 = 0; h.follow = 0; h.wireEnv = 1;
     this.gateLeft = this.gateSamples();
@@ -86,7 +87,7 @@ export class AcousticDrums implements Synth {
       return;
     }
     const f0 = (isSnare ? (note === 40 ? 198 : 184) : TOM_HZ[note]) * tune;
-    const tau1 = (isSnare ? 0.11 : TOM_TAU[note]) * dec;
+    const tau1 = (isSnare ? 0.11 : TOM_TAU[note] * 0.72) * dec;
     const bright = 0.35 + 0.65 * tone;
     // the batter head and the resonant head (tuned a little off it)
     for (let head = 0; head < 2; head++) {
@@ -95,14 +96,16 @@ export class AcousticDrums implements Synth {
         const hz = f0 * RATIO[k] * detune;
         if (hz > 9000) continue;
         const tau = tau1 / (1 + 0.85 * k) * (head ? 0.8 : 1);
-        const a = AMP[k] * (k ? bright * (0.5 + 0.5 * v) : 1) * (head ? 0.42 : 1);
+        const a = AMP[k] * (k ? bright * (0.5 + 0.5 * v) : 1) * (head ? (isSnare ? 0.42 : 0.3) : 1);
         h.modes.push({ f: hz, amp: a, decay: Math.exp(-1 / (tau * FS)), env: 1, ph: k * 0.7 });
       }
     }
     if (shellK > 0.01) for (const [f, t, a] of [[isSnare ? 240 : 190 * (f0 / 117), 0.05, 0.5], [isSnare ? 410 : 330 * (f0 / 117), 0.035, 0.3]]) h.shell.push({ f, amp: a * shellK * (0.4 + 0.6 * v), decay: Math.exp(-1 / (t * FS)), env: 1, ph: 0.4 });
     h.bend = (0.025 + 0.11 * bendK) * (0.3 + 0.7 * v); h.bendDecay = Math.exp(-1 / (0.045 * FS)); h.bendEnv = 1;
-    h.stick = (0.35 + 0.65 * tone) * (0.4 + 0.6 * v); h.stickDecay = Math.exp(-1 / (0.0022 * FS));
-    h.wires = isSnare ? wires * (0.35 + 0.65 * v) : 0; h.wireDecay = Math.exp(-1 / (0.19 * dec * FS));
+    // a hard hit on a tom is mostly noise: a crack that lasts a few milliseconds, the snares rattling under the drum, and a head that does not ring cleanly
+    h.stick = (0.35 + 0.65 * tone) * (0.4 + 0.6 * v) * (isSnare ? 1 : 1 + 1.6 * v * v); h.stickDecay = Math.exp(-1 / ((isSnare ? 0.0022 : 0.0035) * FS));
+    h.wires = isSnare ? wires * (0.35 + 0.65 * v) : wires * 0.85 * v * v * v; h.wireDecay = Math.exp(-1 / ((isSnare ? 0.19 : 0.12) * dec * FS));
+    if (!isSnare) h.jitter = 0.006 + 0.09 * v * v;
   }
 
   noteOff(): void { /* the hit is the envelope */ }
@@ -129,7 +132,7 @@ export class AcousticDrums implements Synth {
     let s = 0;
     const fm = 1 + h.bend * h.bendEnv;
     for (const m of h.modes) {
-      m.ph += (TWO_PI * m.f * fm) / FS;
+      m.ph += (TWO_PI * m.f * fm) / FS + h.jitter * this.noise();
       if (m.ph > TWO_PI) m.ph -= TWO_PI;
       s += Math.sin(m.ph) * m.amp * m.env;
       m.env *= m.decay;
