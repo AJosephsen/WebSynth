@@ -13,8 +13,8 @@ import type { Synth } from "../synth/synth";
 export const DK_ACOUSTIC = 16;
 const RATIO = [1, 1.593, 2.136, 2.296, 2.653, 2.918, 3.156, 3.501];
 const AMP = [1, 0.55, 0.38, 0.3, 0.2, 0.16, 0.12, 0.08];
-// single-headed toms, tuned an octave below the usual (the TUNE knob moves them all): about E1 to F2
-const TOM_HZ: Record<number, number> = { 41: 41, 43: 49, 45: 58.5, 47: 69.5, 48: 78, 50: 87.5 };
+// single-headed toms, tuned far below the usual (the TUNE knob moves them all): about C1 to C#2
+const TOM_HZ: Record<number, number> = { 41: 33, 43: 39, 45: 47, 47: 56, 48: 62, 50: 70 };
 const TOM_TAU: Record<number, number> = { 41: 0.42, 43: 0.36, 45: 0.31, 47: 0.27, 48: 0.24, 50: 0.21 };
 const TWO_PI = Math.PI * 2;
 
@@ -105,7 +105,7 @@ export class AcousticDrums implements Synth {
         const hz = f0 * RATIO[k] * detune;
         if (hz > 9000) continue;
         const tau = tau1 / (1 + 0.85 * k) * (head ? 0.8 : 1);
-        const a = AMP[k] * (k ? bright * (0.5 + 0.5 * v) : 1) * (head ? 0.42 : 1) * (isSnare ? 1 : 1.2);
+        const a = AMP[k] * (k ? bright * (0.5 + 0.5 * v) : 1) * (head ? 0.42 : 1) * (isSnare ? 1 : k ? 0.6 * 1.2 : 1.3);
         h.modes.push({ f: hz, amp: a, decay: Math.exp(-1 / (tau * FS)), env: 1, ph: k * 0.7 });
       }
     }
@@ -164,6 +164,7 @@ export class AcousticDrums implements Synth {
     if (h.stick > 1e-4) { // the stick: noise through a high-pass (the kick's beater is a dull thud: low-passed instead)
       const nz = this.noise();
       if (h.kick) { h.hp1 += 0.06 * (nz - h.hp1); y += h.hp1 * h.stick * 2.4; }
+      else if (h.group === 2) { h.hp1 += 0.14 * (nz - h.hp1); h.lp2 += 0.012 * (h.hp1 - h.lp2); y += (h.hp1 - h.lp2) * h.stick * 1.5; } // the toms' crack is a low thud of noise (about 70-1000 Hz)
       else { h.hp1 += 0.45 * (nz - h.hp1); y += (nz - h.hp1) * h.stick * 0.55; }
       h.stick *= h.stickDecay;
     }
@@ -171,8 +172,9 @@ export class AcousticDrums implements Synth {
     if (h.rim) y = y * 1.4;
     if (h.wires > 0) { // the snare wires: noise through a band-pass, rattling with the head, then on by themselves
       const nz = this.noise();
-      h.lp1 += 0.62 * (nz - h.lp1);
-      h.hp2 += 0.1 * (h.lp1 - h.hp2);
+      const top = h.group === 2 ? 0.16 : 0.62, bottom = h.group === 2 ? 0.02 : 0.1; // the toms' rattle is deep too: about 150 Hz to 1.1 kHz
+      h.lp1 += top * (nz - h.lp1);
+      h.hp2 += bottom * (h.lp1 - h.hp2);
       const band = h.lp1 - h.hp2;
       h.follow = Math.max(Math.abs(head) * 3.2, h.follow * 0.9992);
       h.wireEnv *= h.wireDecay;
