@@ -20,7 +20,7 @@ for (const note of [35, 36, 37, 38, 40, 41, 43, 45, 47, 48, 50]) {
   const y = hit(note, 110);
   check(peak(y) > 0.15 && peak(y) < 1 && y.every(Number.isFinite), `note ${note} sounds (peak ${peak(y).toFixed(2)})`);
 }
-const tom = hit(41, 30, undefined, 3), hi = hit(50, 30, undefined, 3);
+const tom = hit(41, 10, undefined, 3), hi = hit(50, 10, undefined, 3);
 check(zc(tom, 2000, 9000) < zc(hi, 2000, 9000), `a low tom is lower than a high tom (${zc(tom, 2000, 9000).toFixed(0)} vs ${zc(hi, 2000, 9000).toFixed(0)} Hz)`);
 check(rms(tom, 100000, 110000) < rms(tom, 4000, 14000) * 0.3, "a tom decays");
 const hard = hit(45, 125, undefined, 1), gentle = hit(45, 35, undefined, 1);

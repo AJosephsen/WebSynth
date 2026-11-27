@@ -71,7 +71,7 @@ export class AcousticDrums implements Synth {
     const p = this.params;
     const tune = Math.pow(2, ((p[1] ?? 64) - 64) / 64), tone = (p[2] ?? 64) / 127, dec = Math.pow(2, ((p[3] ?? 64) - 64) / 48);
     const wires = (p[4] ?? 90) / 127, sens = (p[5] ?? 80) / 127, bendK = (p[6] ?? 64) / 127, shellK = (p[7] ?? 40) / 127;
-    const v = Math.pow(Math.max(1, Math.min(127, velocity)) / 127, 1 - 0.55 * sens);
+    const v = Math.pow(Math.max(1, Math.min(127, velocity)) / 127, 0.7 - 0.35 * sens); // a flatter curve than the keys: MIDI files play drums at 30-70 and still mean a full hit
     // the same drum struck again: the old hit fades out (no click), the new one takes a free place (or the oldest)
     for (const x of this.hits) if (x.active && x.note === note) x.fading = true;
     let h = this.hits.find((x) => !x.active);
