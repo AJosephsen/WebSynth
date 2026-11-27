@@ -30,7 +30,7 @@ export const engineEntries: LibraryEntry[] = ENGINES.flatMap((e) =>
 );
 
 export const drumEntries: LibraryEntry[] = DRUM_PRESETS.map((d): LibraryEntry => ({
-  id: `DRUM/${d.name}`, name: d.name, bank: "DRUM", source: "factory", instrument: { kind: "drum", params: [...d.params], fx: [...d.fx] }, note: 36,
+  id: `DRUM/${d.name}`, name: d.name, bank: "DRUM", source: "factory", instrument: { kind: "drum", params: [...d.params], fx: [...d.fx] }, note: d.params[0] === 16 ? 38 : 36,
 }));
 
 export const factoryEntries: LibraryEntry[] = [...factoryPatches.map(fm6Entry), ...engineEntries, ...drumEntries];
