@@ -3,6 +3,7 @@ import { Preset } from "../engines/presets";
 import { EnginePoly } from "./enginesynth";
 import { PolySynth } from "./poly";
 import { DrumSynth } from "../drum/drumsynth";
+import { AcousticDrums, DK_ACOUSTIC } from "../drum/acoustic";
 import type { ModSetup } from "../mod/setup";
 
 /** Anything the sequencer and the live keyboard can play. */
@@ -70,7 +71,7 @@ export function instrumentFromPreset(engine: string, p: Preset): Instrument {
 
 export function makeSynth(inst: Instrument, voices = 8): Synth {
   if (inst.kind === "fm6") return new PolySynth(inst.patch, voices);
-  if (inst.kind === "drum") return new DrumSynth(inst.params);
+  if (inst.kind === "drum") return inst.params[0] === DK_ACOUSTIC ? new AcousticDrums(inst.params) : new DrumSynth(inst.params);
   const e = engineById(inst.engine);
   if (!e) throw new Error(`unknown engine ${inst.engine}`);
   return new EnginePoly(e.def, inst, voices);

@@ -11,7 +11,7 @@ import {
 import { DK_808, DK_909, DK_CR78, DK_FM, MelodeeDrum, drumMpcNote } from "./mkit";
 
 /** KIT values (stored): STD, then the model kits; 1..3 are retired aliases; 12..15 are Melodee's kits (TR-808, TR-909, CR-78, FM). */
-export const DK_NAMES = ["STD", "66", "10", "77", "80", "10", "66", "55", "77", "DEEP", "TIGHT", "PERC", "808", "909", "CR78", "FM"];
+export const DK_NAMES = ["STD", "66", "10", "77", "80", "10", "66", "55", "77", "DEEP", "TIGHT", "PERC", "808", "909", "CR78", "FM", "ACOUSTIC"];
 /** the stored KIT of each Melodee kit, and the kit number the engine (mkit.ts) knows it by */
 const MEL_KITS: Record<number, number> = { 12: DK_808, 13: DK_909, 14: DK_CR78, 15: DK_FM };
 const DK_80 = 4;
@@ -190,4 +190,8 @@ export const DRUM_PRESETS: { name: string; params: number[]; fx: number[] }[] = 
   { name: "909 KIT", params: [13, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
   { name: "CR78 KIT", params: [14, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
   { name: "FM KIT", params: [15, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
+  // the acoustic snare and toms: TUNE TONE DECY SNAP (wires) ACC (velocity response) KICK (pitch fall) DRV (shell)
+  { name: "ACOUSTIC", params: [16, 64, 70, 64, 90, 80, 64, 40], fx: [0, 0, 0, 20] },
+  { name: "ACOUSTIC FUSION", params: [16, 76, 90, 50, 105, 90, 50, 25], fx: [0, 0, 0, 12] },
+  { name: "ACOUSTIC ROOM", params: [16, 60, 55, 84, 70, 70, 90, 95], fx: [0, 0, 0, 40] },
 ];
