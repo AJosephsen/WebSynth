@@ -13,7 +13,8 @@ import type { Synth } from "../synth/synth";
 export const DK_ACOUSTIC = 16;
 const RATIO = [1, 1.593, 2.136, 2.296, 2.653, 2.918, 3.156, 3.501];
 const AMP = [1, 0.55, 0.38, 0.3, 0.2, 0.16, 0.12, 0.08];
-const TOM_HZ: Record<number, number> = { 41: 82, 43: 98, 45: 117, 47: 139, 48: 156, 50: 175 };
+// single-headed toms, tuned an octave below the usual (the TUNE knob moves them all): about E1 to F2
+const TOM_HZ: Record<number, number> = { 41: 41, 43: 49, 45: 58.5, 47: 69.5, 48: 78, 50: 87.5 };
 const TOM_TAU: Record<number, number> = { 41: 0.42, 43: 0.36, 45: 0.31, 47: 0.27, 48: 0.24, 50: 0.21 };
 const TWO_PI = Math.PI * 2;
 
@@ -98,13 +99,13 @@ export class AcousticDrums implements Synth {
     const tau1 = (isSnare ? 0.11 : TOM_TAU[note] * 0.72) * dec;
     const bright = 0.35 + 0.65 * tone;
     // the batter head and the resonant head (tuned a little off it)
-    for (let head = 0; head < 2; head++) {
+    for (let head = 0; head < (isSnare ? 2 : 1); head++) { // a snare drum has both heads; the toms are single-headed
       const detune = head === 0 ? 1 : isSnare ? 1.07 : 0.955;
       for (let k = 0; k < RATIO.length; k++) {
         const hz = f0 * RATIO[k] * detune;
         if (hz > 9000) continue;
         const tau = tau1 / (1 + 0.85 * k) * (head ? 0.8 : 1);
-        const a = AMP[k] * (k ? bright * (0.5 + 0.5 * v) : 1) * (head ? (isSnare ? 0.42 : 0.3) : 1);
+        const a = AMP[k] * (k ? bright * (0.5 + 0.5 * v) : 1) * (head ? 0.42 : 1) * (isSnare ? 1 : 1.2);
         h.modes.push({ f: hz, amp: a, decay: Math.exp(-1 / (tau * FS)), env: 1, ph: k * 0.7 });
       }
     }
