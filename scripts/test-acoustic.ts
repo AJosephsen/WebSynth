@@ -39,6 +39,18 @@ const eDry = rms(dryT, 20000, 30000), eGate = rms(gate, 20000, 30000);
 const diff = gate.map((v, i) => v - dryT[i]);
 check(rms(diff, 3000, 5000) > 0.01, `the gated room adds a dense tail while the gate is open (${rms(diff, 3000, 5000).toFixed(3)})`);
 check(rms(gate, 30000, 40000) < 0.02 && eGate < eDry * 4, `and the gate cuts it off hard (${rms(gate, 8000, 12000).toFixed(3)} -> ${rms(gate, 30000, 40000).toFixed(4)})`);
+// a second hit on the same drum adds to the vibration; it does not cut the first off
+{
+  const run = (second: boolean): Float32Array => {
+    const d = new AcousticDrums([16, 64, 70, 64, 90, 80, 64, 40, 0, 0]);
+    d.noteOn(45, 110);
+    const out = new Float32Array(44100);
+    for (let i = 0; i < out.length; i += 64) { if (second && i === 1472) d.noteOn(45, 25); d.render(out, i, 64); }
+    return out;
+  };
+  const single = run(false), flam = run(true);
+  check(rms(flam, 6000, 12000) >= rms(single, 6000, 12000) * 0.95, `a soft second hit does not cut off the first (${rms(single, 6000, 12000).toFixed(3)} -> ${rms(flam, 6000, 12000).toFixed(3)})`);
+}
 const s = makeSynth(factoryInstrument("DRUM/ACOUSTIC"));
 s.noteOn(38, 100); const o = new Float32Array(4096); s.render(o, 0, 4096);
 check(peak(o) > 0.05, "the factory ACOUSTIC kit plays through makeSynth");

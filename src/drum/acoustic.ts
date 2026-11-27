@@ -51,7 +51,7 @@ export class AcousticDrums implements Synth {
   gain = 1;
   readonly keyKit = true;
   readonly voiceMode = 0;
-  private hits = Array.from({ length: 16 }, () => new Hit());
+  private hits = Array.from({ length: 32 }, () => new Hit());
   private rng = 0x2545f491;
   /** A gated room for each of the snare and the toms: a drum element's own effect, not the drum channel's. */
   private readonly rooms = [1, 2].map(() => ({ left: 0, env: 0, room: new GatedRoom() }));
@@ -72,10 +72,11 @@ export class AcousticDrums implements Synth {
     const tune = Math.pow(2, ((p[1] ?? 64) - 64) / 64), tone = (p[2] ?? 64) / 127, dec = Math.pow(2, ((p[3] ?? 64) - 64) / 48);
     const wires = (p[4] ?? 90) / 127, sens = (p[5] ?? 80) / 127, bendK = (p[6] ?? 64) / 127, shellK = (p[7] ?? 40) / 127;
     const v = Math.pow(Math.max(1, Math.min(127, velocity)) / 127, 0.7 - 0.35 * sens); // a flatter curve than the keys: MIDI files play drums at 30-70 and still mean a full hit
-    // the same drum struck again: the old hit fades out (no click), the new one takes a free place (or the oldest)
-    for (const x of this.hits) if (x.active && x.note === note) x.fading = true;
+    // the same drum struck again while it still rings (a flam, a roll): the head keeps vibrating and the new strike adds to it (a linear head: the two
+    // responses sum), the stick only damps the old vibration a little on contact
+    for (const x of this.hits) if (x.active && x.note === note) { for (const m of x.modes) m.env *= 0.7; for (const m of x.shell) m.env *= 0.7; x.wireEnv *= 0.7; }
     let h = this.hits.find((x) => !x.active);
-    if (!h) h = this.hits.reduce((a, b) => (a.age < b.age ? a : b));
+    if (!h) h = this.hits.reduce((a, b) => (a.age < b.age ? a : b)); // no free place: the oldest, which is nearly gone
     h.fade = 1; h.fading = false; h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare; h.kick = false; h.jitter = 0.004;
     h.modes = []; h.shell = [];
     h.hp1 = h.lp1 = h.lp2 = h.hp2 = 0; h.follow = 0; h.wireEnv = 1;
