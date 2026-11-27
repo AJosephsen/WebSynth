@@ -192,6 +192,7 @@ export const DRUM_PRESETS: { name: string; params: number[]; fx: number[] }[] = 
   { name: "FM KIT", params: [15, 64, 64, 64, 64, 100, 0, 0], fx: [0, 0, 0, 20] },
   // the acoustic kit: TUNE TONE DECY SNAP (wires) ACC (velocity response) KICK (pitch fall) DRV (shell) GATE (hold of the gated room) ROOM (its level)
   { name: "ACOUSTIC", params: [16, 64, 70, 64, 90, 80, 64, 40, 45, 60], fx: [0, 0, 0, 0] },
+  { name: "ACOUSTIC DRY", params: [16, 64, 70, 64, 90, 80, 64, 40, 0, 0], fx: [0, 0, 0, 0] },
   { name: "ACOUSTIC FUSION", params: [16, 76, 90, 50, 105, 90, 50, 25, 70, 75], fx: [0, 0, 0, 0] },
   { name: "ACOUSTIC ROOM", params: [16, 60, 55, 84, 70, 70, 90, 95, 127, 55], fx: [0, 0, 0, 0] },
 ];

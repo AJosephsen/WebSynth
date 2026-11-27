@@ -37,6 +37,11 @@ class Hit {
   rim = false;
   kick = false;
   jitter = 0;
+  /** The drum element: 0 kick, 1 snare, 2 toms, 3 side stick. */
+  group = 0;
+  /** Cut by a retrigger or a steal: the hit fades out over a few milliseconds (1: not fading). */
+  fade = 1;
+  fading = false;
   hp1 = 0; lp1 = 0; lp2 = 0; hp2 = 0;
   vel = 1;
   age = 0;
@@ -46,11 +51,10 @@ export class AcousticDrums implements Synth {
   gain = 1;
   readonly keyKit = true;
   readonly voiceMode = 0;
-  private hits = Array.from({ length: 12 }, () => new Hit());
+  private hits = Array.from({ length: 16 }, () => new Hit());
   private rng = 0x2545f491;
-  private gateLeft = 0;
-  private gateEnv = 0;
-  private rev = new GatedRoom();
+  /** A gated room for each of the snare and the toms: a drum element's own effect, not the drum channel's. */
+  private readonly rooms = [1, 2].map(() => ({ left: 0, env: 0, room: new GatedRoom() }));
   private n = 0;
   /** KIT, TUNE, TONE, DECY, SNAP, ACC, KICK, DRV. */
   params: number[];
@@ -68,12 +72,15 @@ export class AcousticDrums implements Synth {
     const tune = Math.pow(2, ((p[1] ?? 64) - 64) / 64), tone = (p[2] ?? 64) / 127, dec = Math.pow(2, ((p[3] ?? 64) - 64) / 48);
     const wires = (p[4] ?? 90) / 127, sens = (p[5] ?? 80) / 127, bendK = (p[6] ?? 64) / 127, shellK = (p[7] ?? 40) / 127;
     const v = Math.pow(Math.max(1, Math.min(127, velocity)) / 127, 1 - 0.55 * sens);
-    let h = this.hits.find((x) => x.active && x.note === note) ?? this.hits.find((x) => !x.active);
+    // the same drum struck again: the old hit fades out (no click), the new one takes a free place (or the oldest)
+    for (const x of this.hits) if (x.active && x.note === note) x.fading = true;
+    let h = this.hits.find((x) => !x.active);
     if (!h) h = this.hits.reduce((a, b) => (a.age < b.age ? a : b));
-    h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare; h.kick = false; h.jitter = 0.004;
+    h.fade = 1; h.fading = false; h.active = true; h.note = note; h.t = 0; h.vel = v; h.age = ++this.n; h.rim = isRim; h.snare = isSnare; h.kick = false; h.jitter = 0.004;
     h.modes = []; h.shell = [];
     h.hp1 = h.lp1 = h.lp2 = h.hp2 = 0; h.follow = 0; h.wireEnv = 1;
-    this.gateLeft = this.gateSamples();
+    h.group = isKick ? 0 : isSnare ? 1 : isTom ? 2 : 3;
+    if (h.group === 1 || h.group === 2) this.rooms[h.group - 1].left = this.gateSamples();
     if (isKick) { // a muted bass drum: a deep head with a big fall in pitch (the boom), harmonic overtones only, a dull beater, everything low-passed
       const f = (note === 35 ? 46 : 50) * tune;
       for (const [r, a, t] of [[1, 1, 0.1], [2, 0.22, 0.045], [3, 0.06, 0.025]]) h.modes.push({ f: f * r, amp: a * (r === 1 ? 1 : 0.5 + 0.5 * v), decay: Math.exp(-1 / (t * dec * FS)), env: 1, ph: 0 });
@@ -112,17 +119,27 @@ export class AcousticDrums implements Synth {
   allOff(): void { for (const h of this.hits) h.active = false; }
 
   render(out: Float32Array, start: number, n: number): void {
-    const g = this.gain * 0.95, p = this.params, roomK = (p[9] ?? 0) / 127, gated = (p[8] ?? 0) > 0;
-    if (!this.hits.some((h) => h.active) && this.gateEnv < 1e-4 && !this.rev.ringing()) return;
+    const g = this.gain * 0.7, p = this.params, roomK = (p[9] ?? 0) / 127, gated = (p[8] ?? 0) > 0;
+    if (!this.hits.some((h) => h.active) && (roomK <= 0 || this.rooms.every((r) => r.env < 1e-4 && !r.room.ringing()))) return;
+    const busIn = [0, 0, 0];
     for (let i = 0; i < n; i++) {
+      busIn[1] = busIn[2] = 0;
       let dry = 0;
-      for (const h of this.hits) if (h.active) dry += this.voice(h) * (0.45 + 0.55 * h.vel);
-      const d = Math.tanh(dry * 1.1) * g;
-      out[start + i] += d;
+      for (const h of this.hits) {
+        if (!h.active) continue;
+        let y = Math.tanh(this.voice(h) * 1.1 * (0.45 + 0.55 * h.vel)) * g; // each drum is limited on its own
+        if (h.fading) { y *= h.fade; h.fade *= 0.997; if (h.fade < 0.002) h.active = false; }
+        dry += y;
+        if (h.group === 1 || h.group === 2) busIn[h.group] += y;
+      }
+      out[start + i] += dry;
       if (roomK > 0) {
-        // the gate: open while it is held after the last hit, then closed in about 12 ms
-        if (this.gateLeft > 0) { this.gateLeft--; this.gateEnv = 1; } else this.gateEnv = gated ? Math.max(0, this.gateEnv - 1 / (0.012 * FS)) : 1;
-        out[start + i] += this.rev.process(d) * this.gateEnv * roomK * 0.9;
+        for (let r = 0; r < 2; r++) {
+          const st = this.rooms[r];
+          // the gate: open while it is held after the last hit of that drum element, then closed in about 12 ms
+          if (st.left > 0) { st.left--; st.env = 1; } else st.env = gated ? Math.max(0, st.env - 1 / (0.012 * FS)) : 1;
+          out[start + i] += st.room.process(busIn[r + 1]) * st.env * roomK * 0.9;
+        }
       }
     }
   }
